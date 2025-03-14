@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\artem\source\repos\Integration\Integration\build\CMakeFiles\9abbc56e390937aad4b902806a42ab60\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{CEED34A7-4C12-3541-95CD-BF04D1691333}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,3 @@
+C:/Users/artem/source/repos/Integration/Integration/build/CMakeFiles/Recon-Integration.dir
+C:/Users/artem/source/repos/Integration/Integration/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/artem/source/repos/Integration/Integration/build/CMakeFiles/ZERO_CHECK.dir
