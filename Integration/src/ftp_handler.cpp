@@ -75,7 +75,7 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
         L"JOIN [ReconDB].[dbo].[FTP_servers] fs ON fs.unit_id = u.id "
         L"JOIN [ReconDB].[dbo].[FTP_Directories] d ON d.struct_id = s.id "
         L"WHERE fs.status = 1";
-        
+
     ret = SQLExecDirect(stmt, (SQLWCHAR*)query.c_str(), SQL_NTS);
     if (!SQL_SUCCEEDED(ret)) {
         logError(L"[FTP]: Не удалось выполнить SQL запрос сбора серверов!");
@@ -125,6 +125,13 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
             servers.end());
 
         servers.push_back(server);
+
+        //auto it = std::remove_if(servers.begin(), servers.end(), [&](const ServerInfo& s) {
+        //    return s.reconId == reconId && s.ip == ip;
+        //    });
+
+        //servers.erase(it, servers.end());  // Удаляем все старые записи с таким же reconId и IP
+        //servers.push_back(server);         // Добавляем новую запись
     }
 
 cleanup:
