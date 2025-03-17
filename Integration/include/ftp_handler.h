@@ -40,7 +40,7 @@ public:
     static void collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc);
     static bool downloadFile(const std::string& fileName, const ServerInfo& server, const std::string url, const std::wstring& ftpCacheDirPath);
     static bool checkIfFileExists(const ServerInfo& server, const std::string url);
-    static int deleteFile(const std::string& filename, const ServerInfo& server, const std::string url);
+    static int deleteFile(const std::string& filename, const ServerInfo& server, const std::string& url);
     static bool checkConnection(const std::string& url, const std::string login, const std::string pass);
     static bool isServerActive(const ServerInfo& server, SQLHDBC dbc);
     static void createLocalDirectoryTree(ServerInfo& server, std::string rootFolder);
