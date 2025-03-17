@@ -735,7 +735,7 @@ void Integration::processPath(const fs::path& fullPath, FilePair& pair, std::wst
         recon.unit = join(pathParts, L" - ");
     }
     int reconNum;
-    if (!fullPath.filename().wstring().size() < 8) {
+    if (fullPath.filename().wstring().size() >= 8) {
         reconNum  = std::stoi(fullPath.filename().wstring().substr(5, 3));
     }
     
