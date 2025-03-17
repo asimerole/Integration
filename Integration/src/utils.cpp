@@ -63,9 +63,10 @@ void trimLogFile() {
 void logError(const std::wstring& message) {
     // Проверяем размер файла
     std::ifstream file(LOG_FILE, std::ios::ate | std::ios::binary);
-    if (file.is_open() && file.tellg() > MAX_LOG_SIZE) {
+    std::streampos fileSize = file.tellg();
+    if (fileSize != -1 && static_cast<size_t>(fileSize) > MAX_LOG_SIZE) {
         file.close();
-        trimLogFile();  // Если файл слишком большой, подчищаем
+        trimLogFile();
     }
 
     std::wofstream logFile(LOG_FILE, std::ios::app);
