@@ -240,56 +240,59 @@ bool Ftp::checkIfFileExists(const ServerInfo& server, const std::string url)
 }
 
 // Удаление файла с сервера
-int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const std::string url)
+int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const std::string& url)
 {
     CURL* curl;
     CURLcode res;
-
     std::string fullRemotePath = url + filename;
 
-    // Проверка на существование файла перед его удалением
-    if (!checkIfFileExists(server, url)) {
+    // Проверка существования файла перед удалением
+    if (!checkIfFileExists(server, fullRemotePath)) {  
         logError(stringToWString("[FTP]: Файл не существует: ") + stringToWString(fullRemotePath));
         return -1;
     }
 
     curl = curl_easy_init();
-    if (curl) {
-        std::string deleCommand = "DELE " + filename;
+    if (!curl) {
+        logError(L"[FTP]: Ошибка инициализации CURL.");
+        return -1;
+    }
 
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_USERPWD, (wstringToString(server.login) + ":" + wstringToString(server.pass)).c_str());
-        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, deleCommand.c_str());
-        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-        curl_easy_setopt(curl, CURLOPT_DEBUGDATA, NULL);
+    std::string deleCommand = "DELE " + filename;
 
-        res = curl_easy_perform(curl);
+    curl_easy_setopt(curl, CURLOPT_URL, fullRemotePath.c_str());  
+    curl_easy_setopt(curl, CURLOPT_USERPWD, (wstringToString(server.login) + ":" + wstringToString(server.pass)).c_str());
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, deleCommand.c_str());
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    curl_easy_setopt(curl, CURLOPT_DEBUGDATA, nullptr);
 
-        if (res != CURLE_OK && res != CURLE_FTP_COULDNT_RETR_FILE) {
-            std::string error = curl_easy_strerror(res);
-            logError(stringToWString("[FTP]: Ошибка удаление файла: ") + stringToWString(error));
+    res = curl_easy_perform(curl);
+    bool fileStillExists = checkIfFileExists(server, fullRemotePath); 
 
-            // Проверка на существование файла после удаление
-            if (!checkIfFileExists(server, url)) {
-                logError(stringToWString("[FTP]: Судя по всему, файл был удален, несмотря на ошибку: ") + stringToWString(fullRemotePath));
-                curl_easy_cleanup(curl);
-                return 0;
-            }
-            else {
-                logError(stringToWString("[FTP]: Файл не был удален: ") + stringToWString(fullRemotePath));
-                curl_easy_cleanup(curl);
-                return 0;
-            }
-        }
-        else {
+    if (res == CURLE_OK) {
+        if (!fileStillExists) {
+            //logError(stringToWString("[FTP]: Файл успешно удален: ") + stringToWString(fullRemotePath));
+            curl_easy_cleanup(curl);
             return 1;
         }
-
-        curl_easy_cleanup(curl);
-        return 0;
+        else {
+            //logError(stringToWString("[FTP]: Файл не был удален (ошибка при проверке): ") + stringToWString(fullRemotePath));
+        }
     }
-    return -1;
+    else {
+        //logError(stringToWString("[FTP]: Ошибка удаления файла: ") + stringToWString(curl_easy_strerror(res)));
+
+        if (!fileStillExists) {
+            //logError(stringToWString("[FTP]: Однако, файл больше не существует на сервере: ") + stringToWString(fullRemotePath));
+            curl_easy_cleanup(curl);
+            return 1;
+        }
+    }
+
+    curl_easy_cleanup(curl);
+    return 0;
 }
+
 
 // Проверка на успешное подключение к ФТП серверу
 bool Ftp::checkConnection(const std::string& url, const std::string login, const std::string pass)
@@ -353,51 +356,61 @@ bool Ftp::isServerActive(const ServerInfo& server, SQLHDBC dbc)
     return false;  // Если не удалось получить статус или сервер не найден
 }
 
+std::wstring sanitizeFileName(std::wstring name) {
+    const std::wstring invalidChars = L"<>:\"/\\|?*";
+    for (wchar_t& ch : name) {
+        if (invalidChars.find(ch) != std::wstring::npos) {
+            ch = L'_';  // Заменяем запрещённые символы на '_'
+        }
+    }
+    return name;
+}
+
+
+// Функция для удаления пробелов в начале и конце строки
+std::wstring trim(const std::wstring& str) {
+    auto start = str.begin();
+    while (start != str.end() && std::iswspace(*start)) {
+        start++;
+    }
+
+    auto end = str.end();
+    do {
+        end--;
+    } while (std::distance(start, end) > 0 && std::iswspace(*end));
+
+    return std::wstring(start, end + 1);
+}
 
 // Создание дерева папок
 void Ftp::createLocalDirectoryTree(ServerInfo& server, std::string rootFolder) {
-    // logError("Starting to create local directory tree for server: " + server.ip);
-
     std::wstring rootFolderW = utf8_to_wstring(rootFolder);
 
-    // Разделяем `server.unit` на две части, если найден символ '-'
-    std::wstring unitW = (server.unit);
+    // Обрабатываем `server.unit`
+    std::wstring unitW = sanitizeFileName(server.unit);
     std::wstring firstPart, secondPart;
 
     size_t separatorPos = unitW.find(L" - ");
     if (separatorPos != std::wstring::npos) {
-        firstPart = unitW.substr(0, separatorPos);       // пр. "Південне ТУ"
-        secondPart = unitW.substr(separatorPos + 3);     // пр. "Запорізький РЦОМ"
+        firstPart = unitW.substr(0, separatorPos);
+        secondPart = trim(unitW.substr(separatorPos + 3));
     }
     else {
-        firstPart = unitW; // Если разделитель не найден, оставляем как есть
+        firstPart = unitW;
     }
 
-    // Формируем корректный путь
-    std::wstring path = rootFolderW + L"/" + firstPart + L"/" + secondPart + L"/" +
-        (server.substation) + L"/" + (server.object) + L"/";
+    // Формируем путь с защитой от запрещённых символов
+    std::wstring path = rootFolderW + L"/" + sanitizeFileName(firstPart) + L"/" +
+        sanitizeFileName(secondPart) + L"/" +
+        sanitizeFileName(server.substation) + L"/" +
+        sanitizeFileName(server.object) + L"/";
 
-    // Check if the local folder path exists, and if not, create it
+    // Безопасно создаём все директории
     if (!fs::exists(path)) {
-        // logError("Local folder path does not exist. Creating directory structure...");
-
-        std::wstring currentPath;
-        size_t pos = 0;
-
-        // Iterate through each level in the path and create directories as needed
-        while ((pos = path.find(L'/', pos)) != std::wstring::npos) {
-            currentPath = path.substr(0, pos);
-
-            if (!fs::exists(currentPath)) {
-                // logError("Creating directory: " + std::string(currentPath.begin(), currentPath.end()));
-                fs::create_directory(currentPath);
-                // logError("Directory created: " + std::string(currentPath.begin(), currentPath.end()));
-            }
-
-            pos++;  // Move past the last '/'
-        }
+        fs::create_directories(path);
     }
 }
+
 
 
 // Перенос файлов и удаление с сервера
