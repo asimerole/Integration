@@ -25,12 +25,15 @@ std::string Ftp::encodeURL(const std::string& url) {
     CURL* curl = curl_easy_init();
     if (curl) {
         char* encodedURL = curl_easy_escape(curl, url.c_str(), static_cast<int>(url.length()));
+        std::string result;
+
         if (encodedURL) {
-            std::string result(encodedURL);
+            result = encodedURL;
             curl_free(encodedURL);
-            return result;
-        }
+        } 
+
         curl_easy_cleanup(curl);
+        return result;
     }
     return std::string();
 }
@@ -299,7 +302,7 @@ bool Ftp::checkConnection(const std::string& url, const std::string login, const
 {
     CURL* curl;
     CURLcode res;
-    bool folderExists = false;
+    bool connectionSuccessful = false;
 
     curl = curl_easy_init();
     if (curl) {
@@ -312,15 +315,15 @@ bool Ftp::checkConnection(const std::string& url, const std::string login, const
         res = curl_easy_perform(curl);
 
         if (res == CURLE_OK) {
-            folderExists = true;
+            connectionSuccessful = true;
         }
         else {
-            logError(stringToWString("[FTP10]: Не удалось установить соединение ") + stringToWString(url) + L": " + stringToWString(curl_easy_strerror(res)));
-            folderExists = false;
+            //logError(L"[FTP10]: Не удалось установить соединение " + stringToWString(url) + L": " + stringToWString(curl_easy_strerror(res)));
+            connectionSuccessful = false;
         }
 
         curl_easy_cleanup(curl);
-        return folderExists;
+        return connectionSuccessful;
     }
     else {
         logError(stringToWString("[FTP11]: Ошибка инициализации libcurl"));
