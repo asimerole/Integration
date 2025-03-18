@@ -39,7 +39,7 @@ std::string Ftp::encodeURL(const std::string& url) {
 size_t Ftp::write_data(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     size_t written = fwrite(ptr, size, nmemb, stream);
     if (written != size * nmemb) {
-        logError(L"[FTP]: Ошибка записи в файл. Записано: " + stringToWString(std::to_string(written)));
+        logError(L"[FTP1]: Ошибка записи в файл. Записано: " + stringToWString(std::to_string(written)));
     }
     return written;
 }
@@ -63,7 +63,7 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
 
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"[FTP]: Failed to allocate SQL statement handle in collectServers");
+        logError(L"[FTP2]: Failed to allocate SQL statement handle in collectServers");
         return;
     }
 
@@ -102,9 +102,10 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
         server.ip = (ipLen != SQL_NULL_DATA) ? ip : L"";
         server.login = (loginLen != SQL_NULL_DATA) ? login : L"";
         server.pass = (passLen != SQL_NULL_DATA) ? pass : L"";
+        server.remoteFolderPath = (remoteFolderPathLen != SQL_NULL_DATA) ? remoteFolderPath : L"";
 
         if (status == 1) {
-            std::wstring url = Ftp::protocol() + server.ip + L":21";
+            std::wstring url = Ftp::protocol() + server.ip + L"/" + server.remoteFolderPath + L"/";
             if (!checkConnection(wstringToString(url), wstringToString(server.login), wstringToString(server.pass))) {
                 continue;
             }
@@ -114,24 +115,23 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
         server.substation = (substationLen != SQL_NULL_DATA) ? substation : L"";
         server.object = (objectLen != SQL_NULL_DATA) ? object : L"";
         server.status = (statusLen != SQL_NULL_DATA) ? status : -1;
-        server.remoteFolderPath = (remoteFolderPathLen != SQL_NULL_DATA) ? remoteFolderPath : L"";
         server.localFolderPath = (localFolderPathLen != SQL_NULL_DATA) ? localFolderPath : L"";
         server.reconId = (reconIdLen != SQL_NULL_DATA) ? reconId : -1;
 
-        servers.erase(std::remove_if(servers.begin(), servers.end(),
-            [&](const ServerInfo& s) {
-                return s.reconId == reconId && s.ip == ip;
-            }),
-            servers.end());
+        //servers.erase(std::remove_if(servers.begin(), servers.end(),
+        //    [&](const ServerInfo& s) {
+        //        return s.reconId == reconId && s.ip == ip;
+        //    }),
+        //    servers.end());
 
-        servers.push_back(server);
+        //servers.push_back(server);
 
         //auto it = std::remove_if(servers.begin(), servers.end(), [&](const ServerInfo& s) {
         //    return s.reconId == reconId && s.ip == ip;
         //    });
 
         //servers.erase(it, servers.end());  // Удаляем все старые записи с таким же reconId и IP
-        //servers.push_back(server);         // Добавляем новую запись
+        servers.push_back(server);         // Добавляем новую запись
     }
 
 cleanup:
@@ -162,8 +162,8 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
         // Try to open the file for writing with _wfopen
         file = _wfopen(dataFile.c_str(), L"wb");
         if (file == nullptr) {
-            logError(L"[FTP]: Error opening file for writing: " + stringToWString(fileName));
-            logError(L"[FTP]: Full file path: " + dataFile);
+            logError(L"[FTP3]: Error opening file for writing: " + stringToWString(fileName));
+            logError(L"[FTP4]: Full file path: " + dataFile);
             perror("fopen");  // Outputs error to stderr for debugging
             curl_easy_cleanup(curl);
             return false;
@@ -177,7 +177,7 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
         // Perform the file download
         res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
-            logError(L"[FTP]: Error during file download for " + stringToWString(fileName) + L": " + stringToWString(curl_easy_strerror(res)));
+            logError(L"[FTP5]: Error during file download for " + stringToWString(fileName) + L": " + stringToWString(curl_easy_strerror(res)));
             fclose(file);
             curl_easy_cleanup(curl);
             return false;
@@ -189,7 +189,7 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
         curl_easy_cleanup(curl);
     }
     else {
-        logError(L"[FTP]: Failed to initialize CURL for downloading: " + stringToWString(fileName));
+        logError(L"[FTP6]: Failed to initialize CURL for downloading: " + stringToWString(fileName));
     }
 
     // The next rows might be for deleting 
@@ -231,7 +231,7 @@ bool Ftp::checkIfFileExists(const ServerInfo& server, const std::string url)
             fileExists = true;
         }
         else {
-            logError(stringToWString("[FTP]: Проверка существования файла не удалась: ") + stringToWString(curl_easy_strerror(res)));
+            logError(stringToWString("[FTP7]: Проверка существования файла не удалась: ") + stringToWString(curl_easy_strerror(res)));
         }
         curl_easy_cleanup(curl);
     }
@@ -248,13 +248,13 @@ int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const
 
     // Проверка существования файла перед удалением
     if (!checkIfFileExists(server, fullRemotePath)) {  
-        logError(stringToWString("[FTP]: Файл не существует: ") + stringToWString(fullRemotePath));
+        logError(stringToWString("[FTP8]: Файл не существует: ") + stringToWString(fullRemotePath));
         return -1;
     }
 
     curl = curl_easy_init();
     if (!curl) {
-        logError(L"[FTP]: Ошибка инициализации CURL.");
+        logError(L"[FTP9]: Ошибка инициализации CURL.");
         return -1;
     }
 
@@ -299,26 +299,31 @@ bool Ftp::checkConnection(const std::string& url, const std::string login, const
 {
     CURL* curl;
     CURLcode res;
+    bool folderExists = false;
 
     curl = curl_easy_init();
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_USERPWD, (login + ":" + pass).c_str());
-        curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 1L);
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "CWD");
+        curl_easy_setopt(curl, CURLOPT_PORT, 21);
 
         res = curl_easy_perform(curl);
 
         if (res == CURLE_OK) {
-            return true;
+            folderExists = true;
         }
         else {
-            logError(stringToWString("[FTP]: Не удалось установить соединение ") + stringToWString(url) + L": " + stringToWString(curl_easy_strerror(res)));
-            return false;
+            logError(stringToWString("[FTP10]: Не удалось установить соединение ") + stringToWString(url) + L": " + stringToWString(curl_easy_strerror(res)));
+            folderExists = false;
         }
+
         curl_easy_cleanup(curl);
+        return folderExists;
     }
     else {
-        logError(stringToWString("[FTP]: Ошибка инициализации libcurl"));
+        logError(stringToWString("[FTP11]: Ошибка инициализации libcurl"));
         return false;
     }
 }
@@ -473,10 +478,10 @@ void Ftp::fileTransfer(ServerInfo& server, const std::string& url, const std::ws
         }
         else {
             if (std::string(curl_easy_strerror(res)) == "Access denied to remote resource") {
-                logError(stringToWString("[FTP]: Ошибка при получении списка файлов: Удаленная папка по адресу ") + stringToWString(url) + stringToWString(" не найдена."));
+                logError(stringToWString("[FTP12]: Ошибка при получении списка файлов: Удаленная папка по адресу ") + stringToWString(url) + stringToWString(" не найдена."));
             }
             else {
-                logError(stringToWString("[FTP]: Ошибка при получении списка файлов: ") + stringToWString(curl_easy_strerror(res)));
+                logError(stringToWString("[FTP13]: Ошибка при получении списка файлов: ") + stringToWString(curl_easy_strerror(res)));
             }
         }
         curl_easy_cleanup(curl);
