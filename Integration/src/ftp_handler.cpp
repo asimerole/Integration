@@ -49,98 +49,110 @@ size_t Ftp::write_data(void* ptr, size_t size, size_t nmemb, FILE* stream) {
 
 // Сallback функция для отображения таблицы файлов
 size_t Ftp::write_list(void* buffer, size_t size, size_t nmemb, void* userp) {
-    std::ostringstream* fileList = static_cast<std::ostringstream*>(userp);
-    fileList->write(static_cast<char*>(buffer), size * nmemb);
-    return size * nmemb;
+    if (!buffer || !userp) {
+        logError(L"write_list: NULL pointer detected!");
+        return 0;
+    }
+
+    std::string* fileList = static_cast<std::string*>(userp);
+    size_t totalSize = size * nmemb;
+
+    std::string chunk(static_cast<char*>(buffer), totalSize);
+    logError(L"[FTP] Received chunk: " + stringToWString(chunk));
+
+    fileList->append(chunk);
+    return totalSize;
 }
+
 
 // Метод сбора серверов из базы данных
 void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
-    static SQLHSTMT stmt = SQL_NULL_HSTMT;
-    if (stmt == SQL_NULL_HSTMT) {
-        SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
-    }
-    else {
-        SQLFreeStmt(stmt, SQL_CLOSE); // Закрываем предыдущее выполнение
-    }
-
-    SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
-    if (!SQL_SUCCEEDED(ret)) {
-        logError(L"[FTP2]: Failed to allocate SQL statement handle in collectServers");
-        return;
-    }
-
-    std::wstring query = L"SELECT u.unit, u.substation, s.object, fs.IP_addr, fs.login, fs.password, "
-        L"fs.status, d.remote_path, d.local_path, s.recon_id "
-        L"FROM [ReconDB].[dbo].[units] u "
-        L"JOIN [ReconDB].[dbo].[struct_units] su ON u.id = su.unit_id "
-        L"JOIN [ReconDB].[dbo].[struct] s ON su.struct_id = s.id "
-        L"JOIN [ReconDB].[dbo].[FTP_servers] fs ON fs.unit_id = u.id "
-        L"JOIN [ReconDB].[dbo].[FTP_Directories] d ON d.struct_id = s.id "
-        L"WHERE fs.status = 1";
-
-    ret = SQLExecDirect(stmt, (SQLWCHAR*)query.c_str(), SQL_NTS);
-    if (!SQL_SUCCEEDED(ret)) {
-        logError(L"[FTP]: Не удалось выполнить SQL запрос сбора серверов!");
-        goto cleanup;
-    }
-
-    while (SQLFetch(stmt) == SQL_SUCCESS) {
-        ServerInfo server;
-        wchar_t unit[256]{}, substation[256]{}, object[256]{}, ip[256]{}, login[256]{}, pass[256]{}, remoteFolderPath[256]{}, localFolderPath[256]{};
-        int status = 0, reconId = -1;
-        SQLLEN unitLen, substationLen, objectLen, ipLen, loginLen, passLen, statusLen, remoteFolderPathLen, localFolderPathLen, reconIdLen;
-
-        if (SQLGetData(stmt, 1, SQL_C_WCHAR, unit, sizeof(unit), &unitLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 2, SQL_C_WCHAR, substation, sizeof(substation), &substationLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 3, SQL_C_WCHAR, object, sizeof(object), &objectLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 4, SQL_C_WCHAR, ip, sizeof(ip), &ipLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 5, SQL_C_WCHAR, login, sizeof(login), &loginLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 6, SQL_C_WCHAR, pass, sizeof(pass), &passLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 7, SQL_C_SLONG, &status, sizeof(status), &statusLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 8, SQL_C_WCHAR, remoteFolderPath, sizeof(remoteFolderPath), &remoteFolderPathLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 9, SQL_C_WCHAR, localFolderPath, sizeof(localFolderPath), &localFolderPathLen) != SQL_SUCCESS) continue;
-        if (SQLGetData(stmt, 10, SQL_C_SLONG, &reconId, sizeof(reconId), &reconIdLen) != SQL_SUCCESS) continue;
-
-        server.ip = (ipLen != SQL_NULL_DATA) ? ip : L"";
-        server.login = (loginLen != SQL_NULL_DATA) ? login : L"";
-        server.pass = (passLen != SQL_NULL_DATA) ? pass : L"";
-        server.remoteFolderPath = (remoteFolderPathLen != SQL_NULL_DATA) ? remoteFolderPath : L"";
-
-        if (status == 1) {
-            std::wstring url = Ftp::protocol() + server.ip + L"/" + server.remoteFolderPath + L"/";
-            if (!checkConnection(wstringToString(url), wstringToString(server.login), wstringToString(server.pass))) {
-                continue;
-            }
+    logError(L"[FTP] Starting collectServers...");
+    SQLHSTMT stmt = SQL_NULL_HSTMT;
+    try {
+        if (stmt == SQL_NULL_HSTMT) {
+            SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
+        }
+        else {
+            SQLFreeStmt(stmt, SQL_CLOSE);
         }
 
-        server.unit = (unitLen != SQL_NULL_DATA) ? unit : L"";
-        server.substation = (substationLen != SQL_NULL_DATA) ? substation : L"";
-        server.object = (objectLen != SQL_NULL_DATA) ? object : L"";
-        server.status = (statusLen != SQL_NULL_DATA) ? status : -1;
-        server.localFolderPath = (localFolderPathLen != SQL_NULL_DATA) ? localFolderPath : L"";
-        server.reconId = (reconIdLen != SQL_NULL_DATA) ? reconId : -1;
+        SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
+        if (!SQL_SUCCEEDED(ret)) {
+            logError(L"[FTP2]: Failed to allocate SQL statement handle in collectServers");
+            return;
+        }
 
-        //servers.erase(std::remove_if(servers.begin(), servers.end(),
-        //    [&](const ServerInfo& s) {
-        //        return s.reconId == reconId && s.ip == ip;
-        //    }),
-        //    servers.end());
+        std::wstring query = L"SELECT u.unit, u.substation, s.object, fs.IP_addr, fs.login, fs.password, "
+            L"fs.status, d.remote_path, d.local_path "
+            L"FROM [ReconDB].[dbo].[units] u "
+            L"JOIN [ReconDB].[dbo].[struct_units] su ON u.id = su.unit_id "
+            L"JOIN [ReconDB].[dbo].[struct] s ON su.struct_id = s.id "
+            L"JOIN [ReconDB].[dbo].[FTP_servers] fs ON fs.unit_id = u.id "
+            L"JOIN [ReconDB].[dbo].[FTP_Directories] d ON d.struct_id = s.id "
+            L"WHERE fs.status = 1";
 
-        //servers.push_back(server);
+        logError(L"[FTP] Executing SQL query...");
+        ret = SQLExecDirect(stmt, (SQLWCHAR*)query.c_str(), SQL_NTS);
+        if (!SQL_SUCCEEDED(ret)) {
+            logError(L"[FTP]: Не удалось выполнить SQL запрос сбора серверов!");
+            goto cleanup;
+        }
 
-        //auto it = std::remove_if(servers.begin(), servers.end(), [&](const ServerInfo& s) {
-        //    return s.reconId == reconId && s.ip == ip;
-        //    });
+        while (SQLFetch(stmt) == SQL_SUCCESS) {
+            ServerInfo server;
+            wchar_t unit[256]{}, substation[256]{}, object[256]{}, ip[256]{}, login[256]{}, pass[256]{}, remoteFolderPath[256]{}, localFolderPath[256]{};
+            int status = 0;
+            SQLLEN unitLen, substationLen, objectLen, ipLen, loginLen, passLen, statusLen, remoteFolderPathLen, localFolderPathLen;
 
-        //servers.erase(it, servers.end());  // Удаляем все старые записи с таким же reconId и IP
-        servers.push_back(server);         // Добавляем новую запись
+            if (SQLGetData(stmt, 1, SQL_C_WCHAR, unit, sizeof(unit), &unitLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 2, SQL_C_WCHAR, substation, sizeof(substation), &substationLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 3, SQL_C_WCHAR, object, sizeof(object), &objectLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 4, SQL_C_WCHAR, ip, sizeof(ip), &ipLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 5, SQL_C_WCHAR, login, sizeof(login), &loginLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 6, SQL_C_WCHAR, pass, sizeof(pass), &passLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 7, SQL_C_SLONG, &status, sizeof(status), &statusLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 8, SQL_C_WCHAR, remoteFolderPath, sizeof(remoteFolderPath), &remoteFolderPathLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 9, SQL_C_WCHAR, localFolderPath, sizeof(localFolderPath), &localFolderPathLen) != SQL_SUCCESS) continue;
+            //if (SQLGetData(stmt, 10, SQL_C_SLONG, &reconId, sizeof(reconId), &reconIdLen) != SQL_SUCCESS) continue;
+
+            server.ip = (ipLen != SQL_NULL_DATA) ? ip : L"";
+            server.login = (loginLen != SQL_NULL_DATA) ? login : L"";
+            server.pass = (passLen != SQL_NULL_DATA) ? pass : L"";
+            server.remoteFolderPath = (remoteFolderPathLen != SQL_NULL_DATA) ? remoteFolderPath : L"";
+
+            logError(L"[FTP] Checking connection for IP: " + server.ip);
+            if (status == 1) {
+                std::wstring url = Ftp::protocol() + server.ip + L"/" + server.remoteFolderPath + L"/";
+                if (!checkConnection(wstringToString(url), wstringToString(server.login), wstringToString(server.pass))) {
+                    logError(L"[FTP] Connection failed for " + server.ip);
+                    continue;
+                }
+            }
+
+            server.unit = (unitLen != SQL_NULL_DATA) ? unit : L"";
+            server.substation = (substationLen != SQL_NULL_DATA) ? substation : L"";
+            server.object = (objectLen != SQL_NULL_DATA) ? object : L"";
+            server.status = (statusLen != SQL_NULL_DATA) ? status : -1;
+            server.localFolderPath = (localFolderPathLen != SQL_NULL_DATA) ? localFolderPath : L"";
+            //server.reconId = (reconIdLen != SQL_NULL_DATA) ? reconId : -1;
+
+            logError(L"[FTP] Adding server with IP: " + server.ip);
+            servers.push_back(server);
+        }
+    }
+    catch (const std::exception& e) {
+        logError(L"[FTP] Exception in collectServers: " + stringToWString(e.what()));
+    }
+    catch (...) {
+        logError(L"[FTP] Unknown exception in collectServers!");
     }
 
 cleanup:
+    logError(L"[FTP] Cleaning up SQL statement...");
     SQLFreeStmt(stmt, SQL_CLOSE);
     SQLFreeHandle(SQL_HANDLE_STMT, stmt);
-    return;
+    logError(L"[FTP] collectServers completed.");
 }
 
 // Загрузка файла с сервера 
@@ -247,17 +259,11 @@ int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const
 {
     CURL* curl;
     CURLcode res;
-    std::string fullRemotePath = url + filename;
-
-    // Проверка существования файла перед удалением
-    if (!checkIfFileExists(server, fullRemotePath)) {  
-        logError(stringToWString("[FTP8]: Файл не существует: ") + stringToWString(fullRemotePath));
-        return -1;
-    }
+    std::string fullRemotePath = url;
 
     curl = curl_easy_init();
     if (!curl) {
-        logError(L"[FTP9]: Ошибка инициализации CURL.");
+        logError(L"[FTP9]: Error generating CURL.");
         return -1;
     }
 
@@ -267,35 +273,28 @@ int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const
     curl_easy_setopt(curl, CURLOPT_USERPWD, (wstringToString(server.login) + ":" + wstringToString(server.pass)).c_str());
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, deleCommand.c_str());
     curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-    curl_easy_setopt(curl, CURLOPT_DEBUGDATA, nullptr);
 
     res = curl_easy_perform(curl);
-    bool fileStillExists = checkIfFileExists(server, fullRemotePath); 
+
 
     if (res == CURLE_OK) {
-        if (!fileStillExists) {
-            //logError(stringToWString("[FTP]: Файл успешно удален: ") + stringToWString(fullRemotePath));
-            curl_easy_cleanup(curl);
-            return 1;
-        }
-        else {
-            //logError(stringToWString("[FTP]: Файл не был удален (ошибка при проверке): ") + stringToWString(fullRemotePath));
-        }
+        logError(stringToWString("[FTP]: File successfully deleted: ") + stringToWString(fullRemotePath));
+        curl_easy_cleanup(curl);
+        return 1;    
     }
     else {
-        //logError(stringToWString("[FTP]: Ошибка удаления файла: ") + stringToWString(curl_easy_strerror(res)));
-
-        if (!fileStillExists) {
-            //logError(stringToWString("[FTP]: Однако, файл больше не существует на сервере: ") + stringToWString(fullRemotePath));
+        if (res != CURLE_FTP_COULDNT_RETR_FILE) {
+            logError(stringToWString("[FTP]: Error deleting file: ") + stringToWString(curl_easy_strerror(res)));
             curl_easy_cleanup(curl);
             return 1;
         }
+        curl_easy_cleanup(curl);
+        return 1;
     }
 
     curl_easy_cleanup(curl);
     return 0;
 }
-
 
 // Проверка на успешное подключение к ФТП серверу
 bool Ftp::checkConnection(const std::string& url, const std::string login, const std::string pass)
@@ -419,76 +418,108 @@ void Ftp::createLocalDirectoryTree(ServerInfo& server, std::string rootFolder) {
     }
 }
 
-
-
 // Перенос файлов и удаление с сервера
-void Ftp::fileTransfer(ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath)
+void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath)
 {
+    logError(L"[FTP] Starting file transfer for: " + stringToWString(url));
+
+    std::string fileListStr;
     CURL* curl;
     CURLcode res;
     curl = curl_easy_init();
+
     if (curl) {
-        std::ostringstream fileListStr;
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_USERPWD, (wstringToString(server.login) + ":" + wstringToString(server.pass)).c_str());
         curl_easy_setopt(curl, CURLOPT_DIRLISTONLY, 1L);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_list);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &fileListStr);
+
+        logError(L"[FTP] Executing curl_easy_perform...");
         res = curl_easy_perform(curl);
+
         if (res == CURLE_OK) {
-            std::istringstream iss(fileListStr.str());
+            //logError(L"[FTP] fileListStr content: " + stringToWString(fileListStr));
+
+            logError(L"[FTP] curl_easy_perform() result: " + stringToWString(curl_easy_strerror(res)));
+            std::istringstream iss(fileListStr);
             std::string fileName;
+            logError(L"While is starting...");
             while (std::getline(iss, fileName)) {
-                if (!ftpIsActive) {
+                if (!ftpIsActive.load(std::memory_order_acquire)) { 
                     std::this_thread::sleep_for(std::chrono::seconds(1));
                     continue;
                 }
-                if (fileName.rfind("DAILY", 0) == 0) {
+                //if (fileName.rfind("DAILY", 0) == 0) {}
 
-                }
-                if (!fileName.empty() && isServerActive(server, dbc)) {
+                //logError(L"File Name: " + stringToWString(fileName));
+                if (!fileName.empty()) {
                     fileName.erase(fileName.find_last_not_of("\r") + 1);
+                    bool serverActive = false;
+                    try {
+                        logError(L"[FTP] Checking server activity...");
+                        serverActive = isServerActive(server, dbc);
+                        logError(L"[FTP] Server activity status: " + std::to_wstring(serverActive));
+                    }
+                    catch (const std::exception& e) {
+                        logError(stringToWString("[FTP] Exception in isServerActive: ") + stringToWString(e.what()));
+                        continue;  
+                    }
 
-                    if (fileName.rfind("REXPR", 0) == 0 || fileName.rfind("RECON", 0) == 0) {
-                        // Установка файла в корневую папку
-                        if (downloadFile(fileName, server, url + fileName, ftpCacheDirPath)) {
-                            // 1. Удаление файла с сервера
-                            deleteFile(fileName, server, url); 
+                    if (serverActive) {
+                        if (fileName.rfind("REXPR", 0) == 0 || fileName.rfind("RECON", 0) == 0) {
+                            // Установка файла в корневую папку
+                            if (downloadFile(fileName, server, url + fileName, ftpCacheDirPath)) {
+                                // 1. Удаление файла с сервера
+                                deleteFile(fileName, server, url); 
 
-                            // 2. Перемещение файла на OneDrive
-                            std::wstring unitW = (server.unit);
-                            std::wstring firstPart, secondPart;
+                                // 2. Перемещение файла на OneDrive
+                                std::wstring unitW = (server.unit);
+                                std::wstring firstPart, secondPart;
 
-                            size_t separatorPos = unitW.find(L" - ");
-                            if (separatorPos != std::wstring::npos) {
-                                firstPart = unitW.substr(0, separatorPos);       // пр. "Південне ТУ"
-                                secondPart = unitW.substr(separatorPos + 3);     // пр. "Запорізький РЦОМ"
-                            }
-                            else {
-                                firstPart = unitW; // Если разделитель не найден, оставляем как есть
-                            }
+                                size_t separatorPos = unitW.find(L" - ");
+                                if (separatorPos != std::wstring::npos) {
+                                    firstPart = unitW.substr(0, separatorPos);       // пр. "Південне ТУ"
+                                    secondPart = unitW.substr(separatorPos + 3);     // пр. "Запорізький РЦОМ"
+                                }
+                                else {
+                                    firstPart = unitW; // Если разделитель не найден, оставляем как есть
+                                }
 
-                            std::wstring oneDriveFullPathToFile = oneDrivePath + L"/" + firstPart + L"/" + secondPart + L"/" +
-                                (server.substation) + L"/" + (server.object) + L"/" + stringToWString(fileName);
+                                std::wstring oneDriveFullPathToFile = oneDrivePath + L"/" + firstPart + L"/" + secondPart + L"/" +
+                                    (server.substation) + L"/" + (server.object) + L"/" + stringToWString(fileName);
 
-                            if (!fs::exists(oneDriveFullPathToFile)) {
-                                fs::copy_file(fs::path(ftpCacheDirPath) / fileName, oneDriveFullPathToFile);
+                                if (!fs::exists(oneDriveFullPathToFile)) {
+                                    fs::copy_file(fs::path(ftpCacheDirPath) / fileName, oneDriveFullPathToFile);
+                                }
                             }
                         }
+                    }
+                    else {
+                        logError(L"[FTP] Server is not active, skipping file: " + stringToWString(fileName));
+                        continue;
                     }
                 }
             }
         }
         else {
-            if (std::string(curl_easy_strerror(res)) == "Access denied to remote resource") {
-                logError(stringToWString("[FTP12]: Ошибка при получении списка файлов: Удаленная папка по адресу ") + stringToWString(url) + stringToWString(" не найдена."));
+            std::string errorMessage = curl_easy_strerror(res);
+            if (errorMessage == "Access denied to remote resource") {
+                logError(stringToWString("[FTP] Error retrieving file list: Remote folder not found at ") + stringToWString(url));
             }
             else {
-                logError(stringToWString("[FTP13]: Ошибка при получении списка файлов: ") + stringToWString(curl_easy_strerror(res)));
+                logError(stringToWString("[FTP] Error retrieving file list: ") + stringToWString(errorMessage));
             }
         }
+        logError(L"[FTP] Cleaning up CURL...");
         curl_easy_cleanup(curl);
     }
+    else {
+        logError(L"[FTP] Failed to initialize CURL.");
+    }
+    logError(L"[FTP] File transfer completed.");
+
+
 }
 
 
