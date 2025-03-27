@@ -44,7 +44,7 @@ public:
     static bool checkConnection(const std::string& url, const std::string login, const std::string pass);
     static bool isServerActive(const ServerInfo& server, SQLHDBC dbc);
     static void createLocalDirectoryTree(ServerInfo& server, std::string rootFolder);
-    static void fileTransfer(ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath);
+    static void fileTransfer(const ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath);
 
 
 private:
