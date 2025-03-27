@@ -229,31 +229,6 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
     return true;
 }
 
-// Проверка на существованеи файла на сервере 
-bool Ftp::checkIfFileExists(const ServerInfo& server, const std::string url)
-{
-    CURL* curl;
-    CURLcode res;
-    bool fileExists = false;
-
-    curl = curl_easy_init();
-    if (curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_USERPWD, (wstringToString(server.login) + ":" + wstringToString(server.pass)).c_str());
-        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-        res = curl_easy_perform(curl);
-        if (res == CURLE_OK) {
-            fileExists = true;
-        }
-        else {
-            logError(stringToWString("[FTP7]: Проверка существования файла не удалась: ") + stringToWString(curl_easy_strerror(res)));
-        }
-        curl_easy_cleanup(curl);
-    }
-
-    return fileExists;
-}
-
 // Удаление файла с сервера
 int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const std::string& url)
 {
