@@ -155,6 +155,52 @@ cleanup:
     logError(L"[FTP] collectServers completed.");
 }
 
+void Ftp::setFileTime(const std::string& filePath, const std::string& timestamp)
+{
+    SYSTEMTIME sysTime = {};
+    FILETIME fileTime = {};
+
+    // Разбираем строку timestamp (формат: "YYYY-MM-DD HH:MM:SS")
+    if (sscanf(timestamp.c_str(), "%d-%d-%d %d:%d:%d",
+        &sysTime.wYear, &sysTime.wMonth, &sysTime.wDay,
+        &sysTime.wHour, &sysTime.wMinute, &sysTime.wSecond) != 6)
+    {
+        logError(L"Invalid timestamp format: " + stringToWString(timestamp));
+        return;
+    }
+
+    // Преобразуем SYSTEMTIME в FILETIME
+    if (!SystemTimeToFileTime(&sysTime, &fileTime))
+    {
+        logError(L"Failed to convert system time to file time");
+        return;
+    }
+
+    // Открываем файл
+    HANDLE hFile = CreateFileA(filePath.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE)
+    {
+        logError(L"Failed to open file for setting time: " + stringToWString(filePath));
+        return;
+    }
+
+    // Устанавливаем только время модификации файла
+    if (!SetFileTime(hFile, nullptr, nullptr, &fileTime))
+    {
+        logError(L"Failed to set file modification time: " + stringToWString(filePath));
+    }
+
+    CloseHandle(hFile);
+}
+
+static size_t throw_away(void* ptr, size_t size, size_t nmemb, void* data)
+{
+    (void)ptr;
+    (void)data;
+    return (size_t)(size * nmemb);
+}
+
 // Загрузка файла с сервера 
 bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, const std::string url, const std::wstring& ftpCacheDirPath)
 {
@@ -163,11 +209,13 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
     CURL* curl;
     FILE* file = nullptr;
     CURLcode res;
+    long filetime = -1;
+    std::wstring dataFile;
 
     curl = curl_easy_init();
     if (curl) {
         // Construct the file path and convert it to a wide string for _wfopen
-        std::wstring dataFile = ftpCacheDirPath + L"/" + stringToWString(fileName);
+        dataFile = ftpCacheDirPath + L"/" + stringToWString(fileName);
         // logError("[FTP]: Constructed file path for download: " + dataFile);
 
         // Set URL and credentials for the download
@@ -197,10 +245,38 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
             curl_easy_cleanup(curl);
             return false;
         }
+        // Get file time 
+        curl_easy_setopt(curl, CURLOPT_FILETIME, 1L);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, throw_away);
+        curl_easy_setopt(curl, CURLOPT_HEADER, 0L);
+
+        res = curl_easy_perform(curl);
+        fclose(file);
+
+        if (CURLE_OK == res) {
+            res = curl_easy_getinfo(curl, CURLINFO_FILETIME, &filetime);
+            if ((CURLE_OK == res) && (filetime >= 0)) {
+
+                std::time_t rawTime = static_cast<std::time_t>(filetime);
+                std::tm* timeinfo = std::gmtime(&rawTime);
+
+                char buffer[40];    // Here contains time
+                std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
+
+                std::string timestamp = std::string(buffer); 
+                setFileTime(wstringToString(dataFile), timestamp);
+
+                //logError(L"[FTP]: File timestamp (UTC): " + stringToWString(timestamp));
+            }
+        }
+        else {
+            logError(L"Failed to get file time!");
+            curl_easy_cleanup(curl);
+        }
+
         // logError("[FTP]: File downloaded successfully: " + fileName);
 
         // Cleanup after download
-        fclose(file);
         curl_easy_cleanup(curl);
     }
     else {
@@ -251,8 +327,9 @@ int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const
 
     res = curl_easy_perform(curl);
 
-
-    if (res == CURLE_OK) {
+    long response_code;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+    if (response_code == 250) {
         logError(stringToWString("[FTP]: File successfully deleted: ") + stringToWString(fullRemotePath));
         curl_easy_cleanup(curl);
         return 1;    
@@ -393,6 +470,17 @@ void Ftp::createLocalDirectoryTree(ServerInfo& server, std::string rootFolder) {
     }
 }
 
+bool startsWithValidPrefix(const std::string& fileName) {
+    std::vector<std::string> validPrefixes = {
+    "REXPR", "RECON", "RNET", "RPUSK", "DAILY", "DIAGN"
+    };
+
+    return std::any_of(validPrefixes.begin(), validPrefixes.end(),
+        [&](const std::string& prefix) {
+            return fileName.rfind(prefix, 0) == 0;
+        });
+}
+
 // Перенос файлов и удаление с сервера
 void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath)
 {
@@ -425,7 +513,6 @@ void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const s
                     std::this_thread::sleep_for(std::chrono::seconds(1));
                     continue;
                 }
-                //if (fileName.rfind("DAILY", 0) == 0) {}
 
                 //logError(L"File Name: " + stringToWString(fileName));
                 if (!fileName.empty()) {
@@ -442,11 +529,11 @@ void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const s
                     }
 
                     if (serverActive) {
-                        if (fileName.rfind("REXPR", 0) == 0 || fileName.rfind("RECON", 0) == 0) {
+                        if (startsWithValidPrefix(fileName)) {
                             // Установка файла в корневую папку
                             if (downloadFile(fileName, server, url + fileName, ftpCacheDirPath)) {
                                 // 1. Удаление файла с сервера
-                                deleteFile(fileName, server, url); 
+                                //deleteFile(fileName, server, url); 
 
                                 // 2. Перемещение файла на OneDrive
                                 std::wstring unitW = (server.unit);
