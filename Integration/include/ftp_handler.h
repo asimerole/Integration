@@ -9,6 +9,8 @@
 #include <sqlext.h>
 #include <sqltypes.h>
 #include <sql.h>
+#include <sys/stat.h>
+#include <sys/utime.h>  
 
 namespace fs = boost::filesystem;
 
@@ -38,8 +40,8 @@ public:
     static size_t write_data(void* ptr, size_t size, size_t nmemb, FILE* stream);
     static size_t write_list(void* buffer, size_t size, size_t nmemb, void* userp);
     static void collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc);
+    static void setFileTime(const std::string& filePath, const std::string& timestamp);
     static bool downloadFile(const std::string& fileName, const ServerInfo& server, const std::string url, const std::wstring& ftpCacheDirPath);
-    static bool checkIfFileExists(const ServerInfo& server, const std::string url);
     static int deleteFile(const std::string& filename, const ServerInfo& server, const std::string& url);
     static bool checkConnection(const std::string& url, const std::string login, const std::string pass);
     static bool isServerActive(const ServerInfo& server, SQLHDBC dbc);
