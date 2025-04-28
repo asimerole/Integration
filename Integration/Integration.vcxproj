@@ -146,6 +146,7 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="onedrive_handler.cpp" />
+    <ClCompile Include="src\base_file.cpp" />
     <ClCompile Include="src\db_connection.cpp" />
     <ClCompile Include="src\ftp_handler.cpp" />
     <ClCompile Include="src\integration_handler.cpp" />
@@ -153,7 +154,9 @@
     <ClCompile Include="src\utils.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\base_file.h" />
     <ClInclude Include="include\db_connection.h" />
+    <ClInclude Include="include\file_info.h" />
     <ClInclude Include="include\ftp_handler.h" />
     <ClInclude Include="include\integration_handler.h" />
     <ClInclude Include="include\mail_handler.h" />

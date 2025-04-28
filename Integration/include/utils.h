@@ -38,20 +38,41 @@
 #include <openssl/rand.h>
 
 void trimLogFile();
-void logError(const std::wstring& message);					// Метод для регистрации сообщений об ошибках
-std::wstring utf8_to_wstring(const std::string& str);		// Метод для конвертации строки "utf8" в формат "wstring"
-std::string wstringToUtf8(const std::wstring& wstr);		// Метод для конвертации строки "wstring" в формат "utf8"
-std::wstring stringToWString(const std::string& str);		// Метод для конвертации строки "string" в формат "wstring"
-std::string wstringToString(const std::wstring& wstr);		// Метод для конвертации строки "wstring" в формат "string"
-std::string cp866_to_utf8(const std::string& cp866_str);	// Метод для конвертации из кодировк "cp866" в "utf8"
-std::string base64Encode(const std::string& input);			// Кодировка Base64 в соответствии с MIME-форматом заголовков.
-std::wstring escapeSingleQuotes(const std::wstring& input);	// Метод пропуска одинарных скобок в параметрах из файла
-bool showConfirmationDialog(const std::wstring& message, const std::wstring& title); // Выводит диалоговое окно с кнопкай Да/Нет
+// Method for logging error messages
+void logError(const std::wstring& message);				
+
+// Method to convert "utf8" string to "wstring" format
+std::wstring utf8_to_wstring(const std::string& str);	
+
+// Method to convert "wstring" string to "utf8" format
+std::string wstringToUtf8(const std::wstring& wstr);
+
+// Method to convert "string" string to "wstring" format
+std::wstring stringToWString(const std::string& str);	
+
+// Method to convert "wstring" string to "string" format
+std::string wstringToString(const std::wstring& wstr);	
+
+// Method to convert from "cp866" to "utf8" encoding format
+std::string cp866_to_utf8(const std::string& cp866_str);	
+
+// Base64 encoding according to MIME header format.
+std::string base64Encode(const std::string& input);
+
+// Method for skipping single parentheses in parameters from a file
+std::wstring escapeSingleQuotes(const std::wstring& input);	
+
+// Displays a dialog box with a Yes/No button.
+bool showConfirmationDialog(const std::wstring& message, const std::wstring& title); 
+
 std::vector<std::uint8_t> decryptData(const std::string& configPath, const unsigned char* key, const unsigned char* iv);
+
 bool readConfigFile(std::string& configPath, std::string& serverName, std::string& databaseName, std::string& username, std::string& password);
+
 std::wstring getCurrentDate();
+
 bool parseDate(const std::wstring& dateString, std::tm& tm);
-bool parseMetaFile();
+
 bool isWithinLastNDays(const std::wstring& fileDate, int days);
 
 

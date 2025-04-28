@@ -3,6 +3,7 @@
 #include <map>
 #include "utils.h"
 #include "db_connection.h" 
+#include "base_file.h"
 #include "integration_handler.h"
 
 
@@ -27,7 +28,7 @@ std::map<std::string, std::vector<std::string>> loadUsersFromDatabase(SQLHDBC db
 
 // Отправка почты 
 bool sendEmails(const MailServerConfig& config, const std::map<std::string,         
-    std::vector<std::string>>& users, const FilePair& pair);
+    std::vector<std::string>>& users, const FileInfo& fileInfo);
 
 
 
