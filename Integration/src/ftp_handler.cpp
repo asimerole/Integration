@@ -121,11 +121,11 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
             server.pass = (passLen != SQL_NULL_DATA) ? pass : L"";
             server.remoteFolderPath = (remoteFolderPathLen != SQL_NULL_DATA) ? remoteFolderPath : L"";
 
-            logError(L"[FTP] Checking connection for IP: " + server.ip);
+            logError(L"[FTP] Checking connection for IP: " + server.ip + L"/" + server.remoteFolderPath + L"/");
             if (status == 1) {
                 std::wstring url = Ftp::protocol() + server.ip + L"/" + server.remoteFolderPath + L"/";
                 if (!checkConnection(wstringToString(url), wstringToString(server.login), wstringToString(server.pass))) {
-                    logError(L"[FTP] Connection failed for " + server.ip);
+                    logError(L"[FTP] Connection failed for " + server.ip + L"/" + server.remoteFolderPath + L"/");
                     continue;
                 }
             }
@@ -161,13 +161,14 @@ void Ftp::setFileTime(const std::string& filePath, const std::string& timestamp)
     FILETIME fileTime = {};
 
     // Разбираем строку timestamp (формат: "YYYY-MM-DD HH:MM:SS")
-    if (sscanf(timestamp.c_str(), "%d-%d-%d %d:%d:%d",
+    if (sscanf(timestamp.c_str(), "%hd-%hd-%hd %hd:%hd:%hd",
         &sysTime.wYear, &sysTime.wMonth, &sysTime.wDay,
         &sysTime.wHour, &sysTime.wMinute, &sysTime.wSecond) != 6)
     {
         logError(L"Invalid timestamp format: " + stringToWString(timestamp));
         return;
     }
+
 
     // Преобразуем SYSTEMTIME в FILETIME
     if (!SystemTimeToFileTime(&sysTime, &fileTime))
@@ -484,105 +485,120 @@ bool startsWithValidPrefix(const std::string& fileName) {
 // Перенос файлов и удаление с сервера
 void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath)
 {
-    logError(L"[FTP] Starting file transfer for: " + stringToWString(url));
+    try {
+        logError(L"[FTP] Starting file transfer for: " + stringToWString(url));
 
-    std::string fileListStr;
-    CURL* curl;
-    CURLcode res;
-    curl = curl_easy_init();
+        std::string fileListStr;
+        CURL* curl;
+        CURLcode res;
+        curl = curl_easy_init();
 
-    if (curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_USERPWD, (wstringToString(server.login) + ":" + wstringToString(server.pass)).c_str());
-        curl_easy_setopt(curl, CURLOPT_DIRLISTONLY, 1L);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_list);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &fileListStr);
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl, CURLOPT_USERPWD, (wstringToString(server.login) + ":" + wstringToString(server.pass)).c_str());
+            curl_easy_setopt(curl, CURLOPT_DIRLISTONLY, 1L);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_list);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &fileListStr);
 
-        logError(L"[FTP] Executing curl_easy_perform...");
-        res = curl_easy_perform(curl);
-
-        if (res == CURLE_OK) {
-            //logError(L"[FTP] fileListStr content: " + stringToWString(fileListStr));
-
+            //logError(L"[FTP] Executing curl_easy_perform...");
+            res = curl_easy_perform(curl);
             logError(L"[FTP] curl_easy_perform() result: " + stringToWString(curl_easy_strerror(res)));
-            std::istringstream iss(fileListStr);
-            std::string fileName;
-            logError(L"While is starting...");
-            while (std::getline(iss, fileName)) {
-                if (!ftpIsActive.load(std::memory_order_acquire)) { 
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
-                    continue;
-                }
 
-                //logError(L"File Name: " + stringToWString(fileName));
-                if (!fileName.empty()) {
-                    fileName.erase(fileName.find_last_not_of("\r") + 1);
-                    bool serverActive = false;
+            if (res == CURLE_OK) {
+                std::istringstream iss(fileListStr);
+                std::string fileName;
+                //logError(L"While is starting...");
+                while (std::getline(iss, fileName)) {
                     try {
-                        logError(L"[FTP] Checking server activity...");
-                        serverActive = isServerActive(server, dbc);
-                        logError(L"[FTP] Server activity status: " + std::to_wstring(serverActive));
-                    }
-                    catch (const std::exception& e) {
-                        logError(stringToWString("[FTP] Exception in isServerActive: ") + stringToWString(e.what()));
-                        continue;  
-                    }
+                        if (!ftpIsActive.load(std::memory_order_acquire)) {
+                            std::this_thread::sleep_for(std::chrono::seconds(1));
+                            continue;
+                        }
 
-                    if (serverActive) {
-                        if (startsWithValidPrefix(fileName)) {
-                            // Установка файла в корневую папку
-                            if (downloadFile(fileName, server, url + fileName, ftpCacheDirPath)) {
-                                // 1. Удаление файла с сервера
-                                //deleteFile(fileName, server, url); 
+                        if (!fileName.empty()) {
+                            fileName.erase(fileName.find_last_not_of("\r") + 1);
 
-                                // 2. Перемещение файла на OneDrive
-                                std::wstring unitW = (server.unit);
-                                std::wstring firstPart, secondPart;
+                            bool serverActive = false;
+                            try {
+                                //logError(L"[FTP] Checking server activity...");
+                                serverActive = isServerActive(server, dbc);
+                                //logError(L"[FTP] Server activity status: " + std::to_wstring(serverActive));
+                            }
+                            catch (const std::exception& e) {
+                                logError(stringToWString("[FTP] Exception in isServerActive: ") + stringToWString(e.what()));
+                                continue;
+                            }
 
-                                size_t separatorPos = unitW.find(L" - ");
-                                if (separatorPos != std::wstring::npos) {
-                                    firstPart = unitW.substr(0, separatorPos);       // пр. "Південне ТУ"
-                                    secondPart = unitW.substr(separatorPos + 3);     // пр. "Запорізький РЦОМ"
+                            if (serverActive) {
+                                if (startsWithValidPrefix(fileName)) {
+                                    if (downloadFile(fileName, server, url + fileName, ftpCacheDirPath)) {
+                                        deleteFile(fileName, server, url);
+
+                                        std::wstring unitW = (server.unit);
+                                        std::wstring firstPart, secondPart;
+
+                                        size_t separatorPos = unitW.find(L" - ");
+                                        if (separatorPos != std::wstring::npos) {
+                                            firstPart = unitW.substr(0, separatorPos);
+                                            secondPart = unitW.substr(separatorPos + 3);
+                                        }
+                                        else {
+                                            firstPart = unitW;
+                                        }
+
+                                        std::wstring oneDriveFullPathToFile = oneDrivePath + L"/" + firstPart + L"/" + secondPart + L"/" +
+                                            (server.substation) + L"/" + (server.object) + L"/" + stringToWString(fileName);
+
+                                        try {
+                                            if (!fs::exists(oneDriveFullPathToFile)) {
+                                                fs::copy_file(fs::path(ftpCacheDirPath) / fileName, oneDriveFullPathToFile);
+                                            }
+                                        }
+                                        catch (const std::exception& e) {
+                                            logError(L"[FTP] Error copying file to OneDrive: " + stringToWString(e.what()));
+                                        }
+                                    }
                                 }
-                                else {
-                                    firstPart = unitW; // Если разделитель не найден, оставляем как есть
-                                }
-
-                                std::wstring oneDriveFullPathToFile = oneDrivePath + L"/" + firstPart + L"/" + secondPart + L"/" +
-                                    (server.substation) + L"/" + (server.object) + L"/" + stringToWString(fileName);
-
-                                if (!fs::exists(oneDriveFullPathToFile)) {
-                                    fs::copy_file(fs::path(ftpCacheDirPath) / fileName, oneDriveFullPathToFile);
-                                }
+                            }
+                            else {
+                                logError(L"[FTP] Server is not active, skipping file: " + stringToWString(fileName));
+                                continue;
                             }
                         }
                     }
-                    else {
-                        logError(L"[FTP] Server is not active, skipping file: " + stringToWString(fileName));
+                    catch (const std::exception& e) {
+                        logError(stringToWString("[FTP] Error during file processing: ") + stringToWString(e.what()));
                         continue;
                     }
                 }
             }
+            else {
+                std::string errorMessage = curl_easy_strerror(res);
+                if (errorMessage == "Access denied to remote resource") {
+                    logError(stringToWString("[FTP] Error retrieving file list: Remote folder not found at ") + stringToWString(url));
+                }
+                else {
+                    logError(stringToWString("[FTP] Error retrieving file list: ") + stringToWString(errorMessage));
+                }
+            }
+
+            //logError(L"[FTP] Cleaning up CURL...");
+            curl_easy_cleanup(curl);
         }
         else {
-            std::string errorMessage = curl_easy_strerror(res);
-            if (errorMessage == "Access denied to remote resource") {
-                logError(stringToWString("[FTP] Error retrieving file list: Remote folder not found at ") + stringToWString(url));
-            }
-            else {
-                logError(stringToWString("[FTP] Error retrieving file list: ") + stringToWString(errorMessage));
-            }
+            logError(L"[FTP] Failed to initialize CURL.");
         }
-        logError(L"[FTP] Cleaning up CURL...");
-        curl_easy_cleanup(curl);
-    }
-    else {
-        logError(L"[FTP] Failed to initialize CURL.");
-    }
-    logError(L"[FTP] File transfer completed.");
 
-
+        logError(L"[FTP] File transfer completed.");
+    }
+    catch (const std::exception& e) {
+        logError(stringToWString("[FTP] Fatal error during fileTransfer: ") + stringToWString(e.what()));
+    }
+    catch (...) {
+        logError(L"[FTP] Unknown fatal error during fileTransfer.");
+    }
 }
+
 
 
 

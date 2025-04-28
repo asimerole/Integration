@@ -191,18 +191,54 @@ std::map<std::string, std::vector<std::string>> loadUsersFromDatabase(SQLHDBC db
     return substationUsers;
 }
 
-bool sendEmails(const MailServerConfig& config, const std::map<std::string, std::vector<std::string>>& users, const FilePair& pair) {
+bool sendEmails(const MailServerConfig& config, const std::map<std::string, std::vector<std::string>>& users, const FileInfo& fileInfo) {
     try {
+
+        std::shared_ptr<ExpressFile> expressFile = nullptr;
+        std::shared_ptr<DataFile> dataFile = nullptr;
+        std::shared_ptr<BaseFile> baseFile = nullptr;
+
+        switch (fileInfo.files.size()) {
+        case 1:
+            if (typeid(*fileInfo.files[0]) == typeid(BaseFile)) {
+                baseFile = std::dynamic_pointer_cast<BaseFile>(fileInfo.files[0]);
+            }
+            else {
+                logError(L"[Mail] Expected only BaseFile, got derived type.");
+            }
+            break;
+
+        case 2:
+            for (const auto& file : fileInfo.files) {
+                if (auto ef = std::dynamic_pointer_cast<ExpressFile>(file)) {
+                    expressFile = ef;
+                }
+                else if (auto df = std::dynamic_pointer_cast<DataFile>(file)) {
+                    dataFile = df;
+                }
+                else {
+                    logError(L"[Mail] Unknown file type in fileInfo.files.");
+                }
+            }
+            break;
+
+        default:
+            logError(L"[Mail] Unexpected number of files. Expected 1 or 2.");
+            break;
+        }
+
+        std::shared_ptr<BaseFile> file = expressFile ? expressFile : baseFile;
+
         // Найти пользователей для указанной подстанции
-        auto it = users.find(wstringToString(pair.recon.substation));
+        auto it = users.find(wstringToString(file->substation));
         if (it == users.end()) {
-            logError(L"[Mail] No users found for substation: " + pair.recon.substation);
+            logError(L"[Mail] No users found for substation: " + file->substation);
             return false; // Если пользователей нет, выходим
         }
 
-        //if (!isWithinLastNDays(pair.date, 3)) {
-        //    return false;
-        //}
+        if (!isWithinLastNDays(file->date, 3)) {
+            return false;
+        }
 
         const std::vector<std::string>& recipientsList = it->second;
 
@@ -254,7 +290,7 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
         // Формирование заголовков письма
         std::string nameSender = wstringToUtf8(config.name_sender);
         std::string fromHeader = "From: \"" + nameSender + "\" <" + wstringToString(config.email_sender) + ">";
-        std::wstring subject = pair.recon.unit + L": " + pair.recon.substation + L" (" + pair.recon.object + L")";
+        std::wstring subject = file->unit + L": " + file->substation + L" (" + file->object + L")";
         std::string subjectHeader = "Subject: " + wstringToUtf8(subject);
 
         struct curl_slist* headers = nullptr;
@@ -272,25 +308,25 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
         logError(L"[Mail] Email text body set successfully.");
 
         // Добавление дата файла
-        if (pair.hasDataFile) {
-            std::string dataFilePath = wstringToString(pair.parentFolderPath + L"\\" + pair.dataFileName);
+        if (dataFile->hasDataFile) {
+            std::string dataFilePath = wstringToString(dataFile->parentFolderPath + L"\\" + dataFile->fileName);
             logError(L"[Mail] Attaching data file: " + stringToWString(dataFilePath));
 
             part = curl_mime_addpart(mime);
             curl_mime_filedata(part, dataFilePath.c_str());                         // путь к первому файлу
-            curl_mime_filename(part, wstringToString(pair.dataFileName).c_str());   // имя файла в письме
-            logError(L"[Mail] Data file attached successfully: " + pair.dataFileName);
+            curl_mime_filename(part, wstringToString(dataFile->fileName).c_str());   // имя файла в письме
+            logError(L"[Mail] Data file attached successfully: " + dataFile->fileName);
         }
 
         // Добавление экспресс файла
-        if (pair.hasExpressFile) {
-            std::string expressFilePath = wstringToString(pair.parentFolderPath + L"\\" + pair.expressFileName);
+        if (expressFile->hasExpressFile) {
+            std::string expressFilePath = wstringToString(expressFile->parentFolderPath + L"\\" + expressFile->fileName);
             logError(L"[Mail] Attaching express file: " + stringToWString(expressFilePath));
 
             part = curl_mime_addpart(mime);
             curl_mime_filedata(part, expressFilePath.c_str());                      // путь ко второму файлу
-            curl_mime_filename(part, wstringToString(pair.expressFileName).c_str());// имя файла в письме
-            logError(L"[Mail] Express file attached successfully: " + pair.expressFileName);
+            curl_mime_filename(part, wstringToString(expressFile->fileName).c_str());// имя файла в письме
+            logError(L"[Mail] Express file attached successfully: " + expressFile->fileName);
         }
 
         logError(L"[Mail] CURL upload setup completed.");

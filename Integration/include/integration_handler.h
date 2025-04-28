@@ -11,125 +11,77 @@
 #include <sstream>
 #include <boost/filesystem.hpp>
 #include <db_connection.h>
+#include <file_info.h>
+#include <utils.h>
 #include <cwctype>
 
 namespace fs = boost::filesystem;
 
-struct Recon
-{
-    std::wstring unit = L"";
-    std::wstring substation = L"";
-    std::wstring object = L"";
-    int reconNumber = 0;
-
-    bool operator<(const Recon& other) const
-    {
-        if (reconNumber != other.reconNumber)
-        {
-            return reconNumber < other.reconNumber;
-        }
-        return false;
-    }
-};
-
-struct FilePair
-{
-    // Тип Recon должен быть объявлен до использования, если используется в структуре
-    Recon recon;
-
-    bool hasDataFile = false;
-    bool hasExpressFile = false;
-    bool inSortedFolder = false;
-
-    std::wstring typeKz = L"";
-    std::wstring damagedLine = L"";
-    std::wstring factor = L"";
-
-    std::string expressFile;    // Binary data for express-file
-    std::string dataFile;       // Binary data for data-file
-
-    bool operator<(const FilePair& other) const
-    {
-        if (parentFolderPath != other.parentFolderPath)
-        {
-            return parentFolderPath < other.parentFolderPath;
-        }
-        if (dataFileName != other.dataFileName)
-        {
-            return dataFileName < other.dataFileName;
-        }
-        return expressFileName < other.expressFileName;
-    }
-};
-
 class Integration {
 public:
-    // Запуск програмы OMP_C
+    // Run OMP_C program
     static bool runExternalProgramWithFlag(const std::wstring& programPath, const std::wstring& inputFilePath);
 
-    // Проверка на то что файл начинаеться на 'RECON'
+    // Checking file name for validity
+    static bool isFileNameValid(const std::wstring& fileName);
+ 
+    // Checking file name starting with 'RECON'
     static bool checkIsDataFile(const std::wstring& fileName);
 
-    // Проверка на то что файл начинаеться на 'REXPR'
+    // Checking file name starting with 'REXPR'
     static bool checkIsExpressFile(const std::wstring& fileName);
 
-    // Проверка папки на ссортированное название 
+    // Checking file for type rnet. prpusk. daily и diagn
+    static bool checkIsOtherFiles(const std::wstring& fileName);
+
+    // Checking a folder for sorted name
     static bool isSortedFolder(const std::wstring& folderName);
 
-    // Получение значений по маркерам в файле 
+    //Getting values ​​by markers in a file
     static std::wstring extractParamValue(const std::wstring& content, const std::wstring& marker);
 
-    // Чтение файла в бинарном формате 
-    static std::string readFileContent(const std::wstring& filePath);
-
-    // Получение значений по регулярным выражениям
+    // Getting values ​​by regular expressions
     static std::wstring extractValueWithRegex(const std::wstring& content, const std::wregex& regex);
 
-    // Чтение экспресс файла 
-    static void readDataFromFile(const std::wstring& filePath, FilePair& pair);
-
-    // Сбор путей к файлам 
+    // Collect paths to files 
     static void collectRootPaths(std::set<std::wstring>& parentFolders, const std::wstring rootFolder);
 
-    // Получение айди из таблиц: data, units, struct 
-    static std::tuple<int, int, int, int> getRecordIDs(SQLHDBC dbc, const FilePair& pair);
+    // Getting id's from tables: data, units, struct 
+    static std::tuple<int, int, int, int> getRecordIDs(SQLHDBC dbc, std::shared_ptr<BaseFile> file, bool needDataProcess);
 
-    // Вставка в таблицу units
-    static int insertIntoUnitTable(SQLHDBC dbc, const FilePair& pair);
+    // Insert into units
+    static int insertIntoUnitTable(SQLHDBC dbc, const std::shared_ptr<BaseFile> file);
 
-    // Вставка в таблицу struct
-    static int insertIntoStructTable(SQLHDBC dbc, const FilePair& pair);
+    // Insert into struct
+    static int insertIntoStructTable(SQLHDBC dbc, const std::shared_ptr<BaseFile> file);
 
-    // Вставка в таблицу data
-    static int insertIntoDataTable(SQLHDBC dbc, const FilePair& pair, int struct_id);
+    // Insert into data
+    static int insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int struct_id);
 
-    // Вставка в таблицу data_process
-    static int insertIntoProcessTable(SQLHDBC dbc, const FilePair& pair, int data_id);
+    // Insert into data_process
+    static int insertIntoProcessTable(SQLHDBC dbc, const std::shared_ptr<BaseFile> file, int data_id);
 
-    // Общий метод интеграции
-    static void fileIntegrationDB(SQLHDBC dbc, const FilePair& pair, std::atomic_bool& mailingIsActive);
+    // General integration method
+    static void fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::atomic_bool& mailingIsActive);
 
-    // Вспомогательная функция для объединения строк с разделителем
-    static std::wstring join(const std::vector<std::wstring>& parts, const std::wstring& delimiter);
-    
-    // Прасинг путя для в случае сортировки 
-    static void processPath(const fs::path& fullPath, FilePair& pair, std::wstring rootFolder);
+    // Helper function for concatenating strings with a separator
+    static std::wstring join(const std::vector<std::wstring>& parts, const std::wstring& delimiter); 
 
-    // Общий метод сбора информации и паре файлов 
-    static void collectInfo(FilePair& pair, const fs::directory_entry& entry, const std::wstring& path, std::wstring rootFolder, SQLHDBC dbc);
+    // General method of collecting information and a pair of files
+    static void collectInfo(FileInfo &fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, SQLHDBC dbc);
 
-    // Метод для сортировки по папкам
-    static void sortPair(FilePair& pair);
+    // Method for sorting by folders
+    static void sortFiles(const FileInfo& fileInfo);
 
-    // Метод для получения пути для файла по номеру рекона
+    // Method to get path for file by recon number
     static std::wstring getPathByRNumber(int recon_id, SQLHDBC dbc);
 
 
 private:
-    // Хранение путей к файлам 
-	std::set<std::wstring> parentFolders;
+    // Storing file paths
+    std::set<std::wstring> parentFolders;
 	
-    // Путь корневой папке
+    // Path to root folder
     std::wstring rootFolder;
 
 };

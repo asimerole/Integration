@@ -14,7 +14,7 @@
 
 namespace fs = boost::filesystem;
 
-// Структура для хранения информации сервера
+// Structure for storing server information
 struct ServerInfo {
     std::wstring unit;
     std::wstring substation;
@@ -30,22 +30,32 @@ struct ServerInfo {
 
 class Ftp {
 public:
-    // Протокол (ftp или ftps)
+    // protocol (ftp or ftps)
     static const std::wstring& protocol() {
         static const std::wstring p = L"ftp://";
         return p;
     }
 
     static std::string encodeURL(const std::string& url);
+
     static size_t write_data(void* ptr, size_t size, size_t nmemb, FILE* stream);
+
     static size_t write_list(void* buffer, size_t size, size_t nmemb, void* userp);
+
     static void collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc);
+
     static void setFileTime(const std::string& filePath, const std::string& timestamp);
+
     static bool downloadFile(const std::string& fileName, const ServerInfo& server, const std::string url, const std::wstring& ftpCacheDirPath);
+
     static int deleteFile(const std::string& filename, const ServerInfo& server, const std::string& url);
+
     static bool checkConnection(const std::string& url, const std::string login, const std::string pass);
+
     static bool isServerActive(const ServerInfo& server, SQLHDBC dbc);
+
     static void createLocalDirectoryTree(ServerInfo& server, std::string rootFolder);
+
     static void fileTransfer(const ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath);
 
 

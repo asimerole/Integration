@@ -72,13 +72,6 @@ void logError(const std::wstring& message) {
     std::wofstream logFile(LOG_FILE, std::ios::app);
     if (!logFile.is_open()) return;
 
-    try {
-        logFile.imbue(std::locale("C.UTF-8"));
-    }
-    catch (const std::exception& e) {
-        std::wcerr << L"Ошибка установки локали: " << utf8_to_wstring(e.what()) << L"\n";
-    }
-
     auto now = std::chrono::system_clock::now();
     std::time_t now_time = std::chrono::system_clock::to_time_t(now);
 
@@ -103,7 +96,7 @@ std::wstring stringToWString(const std::string& str) {
 
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), NULL, 0);
     if (size_needed <= 0) {
-        logError(L"Ошибка конвертации строки: " + std::to_wstring(GetLastError()));
+        logError(L"Error converting string: " + std::to_wstring(GetLastError()));
         return L"";
     }
 
@@ -112,22 +105,6 @@ std::wstring stringToWString(const std::string& str) {
 
     return wstr;
 }
-
-//std::wstring stringToWString(const std::string& str) {
-//    try {
-//        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> converter;
-//        return converter.from_bytes(str);
-//    }
-//    catch (const std::range_error& e) {
-//        logError(L"Range error caught in stringToWString: " + stringToWString(e.what()));
-//        logError(stringToWString(str));
-//        throw;
-//    }
-//    catch (const std::exception& e) {
-//        logError(L"General exception caught in stringToWString: " + stringToWString(e.what()));
-//        throw;
-//    }
-//}
 
 std::string wstringToString(const std::wstring& wstr)
 {
