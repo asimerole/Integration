@@ -34,13 +34,6 @@ struct Recon
 
 struct FilePair
 {
-    std::wstring expressFileName = L"";  // REXPRxxx.xxx (ex. REXPR218.453) (can read)
-    std::wstring dataFileName = L"";     // RECONxxx.xxx (ex. RECON218.453) (can not read)
-    std::wstring date = L"";             // Data from express-file, ex. 08/04/2024
-    std::wstring time = L"";             // Time from express-file, ex. 07:34:51.622.
-    std::wstring parentFolderPath = L""; // The folder where the file is located
-    std::wstring fileNum = L"";          // Number of file 
-
     // Тип Recon должен быть объявлен до использования, если используется в структуре
     Recon recon;
 
