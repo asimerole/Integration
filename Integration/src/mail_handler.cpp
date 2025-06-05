@@ -30,102 +30,102 @@ MailServerConfig parseMailServerConfig(const std::string& jsonString) {
         json configJson = json::parse(jsonString);
 
         // Логгирование успешного парсинга
-        //logError("Successfully parsed JSON. Extracting fields...");
-
+        //logEmailError("Successfully parsed JSON. Extracting fields...");
+        
         MailServerConfig config;
 
         // Извлечение SMTP сервера
         if (configJson.contains("SMTP server") && !configJson["SMTP server"].is_null()) {
             config.smtp_server = utf8_to_wstring(configJson["SMTP server"].get<std::string>());
-            //logError("SMTP server: " + wstringToUtf8(config.smtp_server));
+            //logEmailError("SMTP server: " + wstringToUtf8(config.smtp_server));
         }
         else {
-            logError(L"[Mail] Field 'SMTP server' is missing or null.");
+            logEmailError(L"[Mail] Field 'SMTP server' is missing or null.");
         }
 
         // Извлечение необходимости аутентификации
         if (configJson.contains("auth") && !configJson["auth"].is_null()) {
             config.auth_required = configJson["auth"].get<bool>();
-            //logError("Auth required: " + std::to_string(config.auth_required));
+            //logEmailError("Auth required: " + std::to_string(config.auth_required));
         }
         else {
             config.auth_required = false; // Значение по умолчанию
-            //logError("Field 'auth' is missing or null. Defaulting to false.");
+            //logEmailError("Field 'auth' is missing or null. Defaulting to false.");
         }
 
         // Извлечение логина
         if (config.auth_required && configJson.contains("login") && !configJson["login"].is_null()) {
             config.auth_login = utf8_to_wstring(configJson["login"].get<std::string>());
-            //logError("Auth login: " + wstringToUtf8(config.auth_login));
+            //logEmailError("Auth login: " + wstringToUtf8(config.auth_login));
         }
         else if (config.auth_required) {
-            logError(L"[Mail] Field 'login' is missing or null, but auth is required.");
+            logEmailError(L"[Mail] Field 'login' is missing or null, but auth is required.");
         }
 
         // Извлечение пароля
         if (config.auth_required && configJson.contains("password") && !configJson["password"].is_null()) {
             config.auth_password = utf8_to_wstring(configJson["password"].get<std::string>());
-            //logError("Auth password: [hidden for security]");
+            //logEmailError("Auth password: [hidden for security]");
         }
         else if (config.auth_required) {
-            logError(L"[Mail] Field 'password' is missing or null, but auth is required.");
+            logEmailError(L"[Mail] Field 'password' is missing or null, but auth is required.");
         }
 
         // Извлечение email отправителя
         if (configJson.contains("email_sender") && !configJson["email_sender"].is_null()) {
             config.email_sender = utf8_to_wstring(configJson["email_sender"].get<std::string>());
-            //logError("Email sender: " + wstringToUtf8(config.email_sender));
+            //logEmailError("Email sender: " + wstringToUtf8(config.email_sender));
         }
         else {
-            logError(L"[Mail] Field 'email_sender' is missing or null.");
+            logEmailError(L"[Mail] Field 'email_sender' is missing or null.");
         }
 
         // Извлечение port 
         if (configJson.contains("port") && !configJson["port"].is_null()) {
             config.port = utf8_to_wstring(configJson["port"].get<std::string>());
-            //logError("Port: " + wstringToUtf8(config.port));
+            //logEmailError("Port: " + wstringToUtf8(config.port));
         }
         else {
-            logError(L"[Mail] Field 'port' is missing or null.");
+            logEmailError(L"[Mail] Field 'port' is missing or null.");
         }
 
         // Извлечение шаблона сообщения
         if (configJson.contains("msg_template") && !configJson["msg_template"].is_null()) {
             config.message_template = utf8_to_wstring(configJson["msg_template"].get<std::string>());
-            //logError("Message template: " + wstringToUtf8(config.message_template));
+            //logEmailError("Message template: " + wstringToUtf8(config.message_template));
         }
         else {
-            logError(L"[Mail] Field 'msg_template' is missing or null.");
+            logEmailError(L"[Mail] Field 'msg_template' is missing or null.");
         }
 
         // Извлечение имени отправителя
         if (configJson.contains("name_sender") && !configJson["name_sender"].is_null()) {
             config.name_sender = utf8_to_wstring(configJson["name_sender"].get<std::string>());
-            //logError("Name sender: " + wstringToUtf8(config.name_sender));
+            //logEmailError("Name sender: " + wstringToUtf8(config.name_sender));
         }
         else {
-            logError(L"[Mail] Field 'name_sender' is missing or null.");
+            logEmailError(L"[Mail] Field 'name_sender' is missing or null.");
         }
 
         // Извлечение использования SSL
         if (configJson.contains("ssl") && !configJson["ssl"].is_null()) {
             config.use_ssl = configJson["ssl"].get<bool>();
-            //logError("Use SSL: " + std::to_string(config.use_ssl));
+            //logEmailError("Use SSL: " + std::to_string(config.use_ssl));
         }
         else {
             config.use_ssl = false; // Значение по умолчанию
-            logError(L"[Mail] Field 'ssl' is missing or null. Defaulting to false.");
+            logEmailError(L"[Mail] Field 'ssl' is missing or null. Defaulting to false.");
         }
 
         return config;
 
     }
     catch (const json::exception& e) {
-        logError(L"[Mail] JSON parsing error: " + stringToWString(e.what()));
+        logEmailError(L"[Mail] JSON parsing error: " + stringToWString(e.what()));
         throw; // Пробрасываем исключение дальше
     }
     catch (const std::exception& e) {
-        logError(L"[Mail] Unexpected error in parseMailServerConfig: " + stringToWString(e.what()));
+        logEmailError(L"[Mail] Unexpected error in parseMailServerConfig: " + stringToWString(e.what()));
         throw;
     }
 }
@@ -136,7 +136,7 @@ std::map<std::string, std::vector<std::string>> loadUsersFromDatabase(SQLHDBC db
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
 
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"[Mail] Failed to allocate SQL statement handle");
+        logEmailError(L"[Mail] Failed to allocate SQL statement handle");
         return {};
     }
 
@@ -153,7 +153,7 @@ std::map<std::string, std::vector<std::string>> loadUsersFromDatabase(SQLHDBC db
     // Подготавливаем запрос
     ret = SQLExecDirectW(hstmt, (SQLWCHAR*)sqlQuery, SQL_NTS);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"[Mail] Failed to execute SQL query");
+        logEmailError(L"[Mail] Failed to execute SQL query");
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         return {};
     }
@@ -165,14 +165,14 @@ std::map<std::string, std::vector<std::string>> loadUsersFromDatabase(SQLHDBC db
 
     ret = SQLBindCol(hstmt, 1, SQL_C_WCHAR, loginBuffer, sizeof(loginBuffer), &loginIndicator);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"[Mail] Failed to bind login column");
+        logEmailError(L"[Mail] Failed to bind login column");
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         return {};
     }
 
     ret = SQLBindCol(hstmt, 2, SQL_C_WCHAR, substationBuffer, sizeof(substationBuffer), &substationIndicator);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"[Mail] Failed to bind substation column");
+        logEmailError(L"[Mail] Failed to bind substation column");
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         return {};
     }
@@ -204,7 +204,7 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
                 baseFile = std::dynamic_pointer_cast<BaseFile>(fileInfo.files[0]);
             }
             else {
-                logError(L"[Mail] Expected only BaseFile, got derived type.");
+                logEmailError(L"[Mail] Expected only BaseFile, got derived type.");
             }
             break;
 
@@ -217,13 +217,13 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
                     dataFile = df;
                 }
                 else {
-                    logError(L"[Mail] Unknown file type in fileInfo.files.");
+                    logEmailError(L"[Mail] Unknown file type in fileInfo.files.");
                 }
             }
             break;
 
         default:
-            logError(L"[Mail] Unexpected number of files. Expected 1 or 2.");
+            logEmailError(L"[Mail] Unexpected number of files. Expected 1 or 2.");
             break;
         }
 
@@ -232,7 +232,7 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
         // Найти пользователей для указанной подстанции
         auto it = users.find(wstringToString(file->substation));
         if (it == users.end()) {
-            logError(L"[Mail] No users found for substation: " + file->substation);
+            logEmailError(L"[Mail] No users found for substation: " + file->substation);
             return false; // Если пользователей нет, выходим
         }
 
@@ -242,48 +242,48 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
 
         const std::vector<std::string>& recipientsList = it->second;
 
-        logError(L"[Mail] Initializing CURL for email sending...");
+        logEmailError(L"[Mail] Initializing CURL for email sending...");
 
         CURLcode res;
         CURL* curl = curl_easy_init();
         if (!curl) {
-            logError(L"[Mail] CURL initialization failed.");
+            logEmailError(L"[Mail] CURL initialization failed.");
             return false;
         }
 
-        logError(L"[Mail] CURL initialized successfully");
+        logEmailError(L"[Mail] CURL initialized successfully");
 
         // Настройка соединения с SMTP-сервером
         std::string protocol = config.use_ssl ? "smtps://" : "smtp://";
         std::string url = protocol + wstringToString(config.smtp_server) + ":" + wstringToString(config.port);
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        logError(L"[Mail] Set SMTP server URL to: " + stringToWString(url));
+        logEmailError(L"[Mail] Set SMTP server URL to: " + stringToWString(url));
 
         // Включение проверки сертификатов (для SSL)
         if (config.use_ssl) {
             curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L); // Проверка хоста сертификата
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L); // Проверка цепочки сертификатов
-            logError(L"[Mail] SSL verification enabled.");
+            logEmailError(L"[Mail] SSL verification enabled.");
         }
 
         // Аутентификация (если требуется)
         if (config.auth_required) {
             curl_easy_setopt(curl, CURLOPT_USERNAME, wstringToString(config.auth_login).c_str());
             curl_easy_setopt(curl, CURLOPT_PASSWORD, wstringToString(config.auth_password).c_str());
-            logError(L"[Mail] Authentication enabled for user: " + config.auth_login);
+            logEmailError(L"[Mail] Authentication enabled for user: " + config.auth_login);
         }
 
         // Отправитель
         std::string mailFrom = "<" + wstringToString(config.email_sender) + ">";
         curl_easy_setopt(curl, CURLOPT_MAIL_FROM, mailFrom.c_str());
-        logError(L"[Mail] Set MAIL FROM to: " + stringToWString(mailFrom));
+        logEmailError(L"[Mail] Set MAIL FROM to: " + stringToWString(mailFrom));
 
         // Настройка получателей
         struct curl_slist* recipients = nullptr;
         for (const std::string& recipient : recipientsList) {
             recipients = curl_slist_append(recipients, ("<" + recipient + ">").c_str());
-            logError(L"[Mail] Added recipient: " + stringToWString(recipient));
+            logEmailError(L"[Mail] Added recipient: " + stringToWString(recipient));
         }
         curl_easy_setopt(curl, CURLOPT_MAIL_RCPT, recipients);
 
@@ -297,51 +297,68 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
         headers = curl_slist_append(headers, fromHeader.c_str());
         headers = curl_slist_append(headers, subjectHeader.c_str());
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        logError(L"[Mail] Headers set: " + stringToWString(fromHeader) + L"; " + stringToWString(subjectHeader));
+        logEmailError(L"[Mail] Headers set: " + stringToWString(fromHeader) + L"; " + stringToWString(subjectHeader));
 
         curl_mime* mime = curl_mime_init(curl);
+        if (!mime) {
+            logEmailError(L"[Mail] curl_mime_init failed — returned nullptr.");
+            return false;
+        }
+
 
         // Добавление текста сообщения
         curl_mimepart* part = curl_mime_addpart(mime);
         curl_mime_data(part, wstringToUtf8(config.message_template).c_str(), CURL_ZERO_TERMINATED);
         curl_mime_type(part, "text/plain; charset=UTF-8");
-        logError(L"[Mail] Email text body set successfully.");
+        logEmailError(L"[Mail] Email text body set successfully.");
 
         // Добавление дата файла
-        if (dataFile->hasDataFile) {
+        if (dataFile && dataFile->hasDataFile) {
             std::string dataFilePath = wstringToString(dataFile->parentFolderPath + L"\\" + dataFile->fileName);
-            logError(L"[Mail] Attaching data file: " + stringToWString(dataFilePath));
+            logEmailError(L"[Mail] Attaching data file: " + stringToWString(dataFilePath));
 
             part = curl_mime_addpart(mime);
-            curl_mime_filedata(part, dataFilePath.c_str());                         // путь к первому файлу
+            curl_mime_filedata(part, dataFilePath.c_str());                          // путь к первому файлу
             curl_mime_filename(part, wstringToString(dataFile->fileName).c_str());   // имя файла в письме
-            logError(L"[Mail] Data file attached successfully: " + dataFile->fileName);
+            logEmailError(L"[Mail] Data file attached successfully: " + dataFile->fileName);
         }
 
         // Добавление экспресс файла
-        if (expressFile->hasExpressFile) {
+        if (expressFile && expressFile->hasExpressFile) {
             std::string expressFilePath = wstringToString(expressFile->parentFolderPath + L"\\" + expressFile->fileName);
-            logError(L"[Mail] Attaching express file: " + stringToWString(expressFilePath));
+            logEmailError(L"[Mail] Attaching express file: " + stringToWString(expressFilePath));
 
             part = curl_mime_addpart(mime);
-            curl_mime_filedata(part, expressFilePath.c_str());                      // путь ко второму файлу
-            curl_mime_filename(part, wstringToString(expressFile->fileName).c_str());// имя файла в письме
-            logError(L"[Mail] Express file attached successfully: " + expressFile->fileName);
+            curl_mime_filedata(part, expressFilePath.c_str());                          // путь ко второму файлу
+            curl_mime_filename(part, wstringToString(expressFile->fileName).c_str());   // имя файла в письме
+            logEmailError(L"[Mail] Express file attached successfully: " + expressFile->fileName);
         }
 
-        logError(L"[Mail] CURL upload setup completed.");
+        // Обработка обычного файла
+        if (baseFile) {
+            std::string baseFilePath = wstringToString(baseFile->parentFolderPath + L"\\" + baseFile->fileName);
+            logEmailError(L"[Mail] Attaching base file: " + stringToWString(baseFilePath));
+
+            part = curl_mime_addpart(mime);
+            curl_mime_filedata(part, baseFilePath.c_str());
+            curl_mime_filename(part, wstringToString(baseFile->fileName).c_str());
+            logEmailError(L"[Mail] Base file attached successfully: " + baseFile->fileName);
+        }
+
+
+        logEmailError(L"[Mail] CURL upload setup completed.");
 
         curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
 
         // Отправка сообщения
-        logError(L"[Mail] Starting email transmission...");
+        logEmailError(L"[Mail] Starting email transmission...");
         res = curl_easy_perform(curl);
 
         if (res != CURLE_OK) {
-            logError(L"[Mail] Failed to send email. CURL error: " + stringToWString(curl_easy_strerror(res)));
+            logEmailError(L"[Mail] Failed to send email. CURL error: " + stringToWString(curl_easy_strerror(res)));
         }
         else {
-            logError(L"[Mail] Email sent successfully.");
+            logEmailError(L"[Mail] Email sent successfully.");
         }
 
         // Освобождение ресурсов
@@ -350,18 +367,18 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
         curl_mime_free(mime);
         curl_easy_cleanup(curl);
 
-        logError(L"[Mail] CURL resources cleaned up.\n");
+        logEmailError(L"[Mail] CURL resources cleaned up.\n");
 
         // Задержка перед отправкой следующего письма
         std::this_thread::sleep_for(std::chrono::seconds(1));
         return true;
     }
     catch (const std::exception& ex) {
-        logError(L"[Mail] General failure in sendEmails: " + stringToWString(ex.what()));
+        logEmailError(L"[Mail] General failure in sendEmails: " + stringToWString(ex.what()));
         return false;
     }
     catch (...) {
-        logError(L"[Mail] An unknown error occurred in sendEmails.");
+        logEmailError(L"[Mail] An unknown error occurred in sendEmails.");
         return false;
     }
 }

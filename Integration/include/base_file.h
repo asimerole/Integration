@@ -16,6 +16,7 @@ struct BaseFile {
     std::wstring parentFolderPath;		// The folder where the file is located
     std::wstring fullPath;              // Full path to file include file name 
     std::string binaryData;			 	// Binary data
+    size_t binaryDataSize;              // Size of file
     std::wstring fileNum;               // Num of file (xxxxx.xxx.321)
 
     bool inSortedFolder = false;        // Marker sort folder

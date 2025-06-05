@@ -42,7 +42,7 @@ std::string Ftp::encodeURL(const std::string& url) {
 size_t Ftp::write_data(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     size_t written = fwrite(ptr, size, nmemb, stream);
     if (written != size * nmemb) {
-        logError(L"[FTP1]: Ошибка записи в файл. Записано: " + stringToWString(std::to_string(written)));
+        logFtpError(L"[FTP1]: Ошибка записи в файл. Записано: " + stringToWString(std::to_string(written)));
     }
     return written;
 }
@@ -50,7 +50,7 @@ size_t Ftp::write_data(void* ptr, size_t size, size_t nmemb, FILE* stream) {
 // Сallback функция для отображения таблицы файлов
 size_t Ftp::write_list(void* buffer, size_t size, size_t nmemb, void* userp) {
     if (!buffer || !userp) {
-        logError(L"write_list: NULL pointer detected!");
+        logFtpError(L"write_list: NULL pointer detected!");
         return 0;
     }
 
@@ -58,7 +58,7 @@ size_t Ftp::write_list(void* buffer, size_t size, size_t nmemb, void* userp) {
     size_t totalSize = size * nmemb;
 
     std::string chunk(static_cast<char*>(buffer), totalSize);
-    logError(L"[FTP] Received chunk: " + stringToWString(chunk));
+    logFtpError(L"[FTP] Received chunk: " + stringToWString(chunk));
 
     fileList->append(chunk);
     return totalSize;
@@ -67,7 +67,7 @@ size_t Ftp::write_list(void* buffer, size_t size, size_t nmemb, void* userp) {
 
 // Метод сбора серверов из базы данных
 void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
-    logError(L"[FTP] Starting collectServers...");
+    logFtpError(L"[FTP] Starting collectServers...");
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     try {
         if (stmt == SQL_NULL_HSTMT) {
@@ -79,12 +79,12 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
 
         SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
         if (!SQL_SUCCEEDED(ret)) {
-            logError(L"[FTP2]: Failed to allocate SQL statement handle in collectServers");
+            logFtpError(L"[FTP2]: Failed to allocate SQL statement handle in collectServers");
             return;
         }
 
         std::wstring query = L"SELECT u.unit, u.substation, s.object, fs.IP_addr, fs.login, fs.password, "
-            L"fs.status, d.remote_path, d.local_path "
+            L"fs.status, d.remote_path, d.local_path, d.isFourDigits "
             L"FROM [ReconDB].[dbo].[units] u "
             L"JOIN [ReconDB].[dbo].[struct_units] su ON u.id = su.unit_id "
             L"JOIN [ReconDB].[dbo].[struct] s ON su.struct_id = s.id "
@@ -92,18 +92,18 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
             L"JOIN [ReconDB].[dbo].[FTP_Directories] d ON d.struct_id = s.id "
             L"WHERE fs.status = 1";
 
-        logError(L"[FTP] Executing SQL query...");
+        logFtpError(L"[FTP] Executing SQL query...");
         ret = SQLExecDirect(stmt, (SQLWCHAR*)query.c_str(), SQL_NTS);
         if (!SQL_SUCCEEDED(ret)) {
-            logError(L"[FTP]: Не удалось выполнить SQL запрос сбора серверов!");
+            logFtpError(L"[FTP]: Не удалось выполнить SQL запрос сбора серверов!");
             goto cleanup;
         }
 
         while (SQLFetch(stmt) == SQL_SUCCESS) {
             ServerInfo server;
             wchar_t unit[256]{}, substation[256]{}, object[256]{}, ip[256]{}, login[256]{}, pass[256]{}, remoteFolderPath[256]{}, localFolderPath[256]{};
-            int status = 0;
-            SQLLEN unitLen, substationLen, objectLen, ipLen, loginLen, passLen, statusLen, remoteFolderPathLen, localFolderPathLen;
+            int status = 0, isFourDigits = 0;
+            SQLLEN unitLen, substationLen, objectLen, ipLen, loginLen, passLen, statusLen, isFourDigitsLen, remoteFolderPathLen, localFolderPathLen;
 
             if (SQLGetData(stmt, 1, SQL_C_WCHAR, unit, sizeof(unit), &unitLen) != SQL_SUCCESS) continue;
             if (SQLGetData(stmt, 2, SQL_C_WCHAR, substation, sizeof(substation), &substationLen) != SQL_SUCCESS) continue;
@@ -114,18 +114,31 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
             if (SQLGetData(stmt, 7, SQL_C_SLONG, &status, sizeof(status), &statusLen) != SQL_SUCCESS) continue;
             if (SQLGetData(stmt, 8, SQL_C_WCHAR, remoteFolderPath, sizeof(remoteFolderPath), &remoteFolderPathLen) != SQL_SUCCESS) continue;
             if (SQLGetData(stmt, 9, SQL_C_WCHAR, localFolderPath, sizeof(localFolderPath), &localFolderPathLen) != SQL_SUCCESS) continue;
-            //if (SQLGetData(stmt, 10, SQL_C_SLONG, &reconId, sizeof(reconId), &reconIdLen) != SQL_SUCCESS) continue;
+            if (SQLGetData(stmt, 10, SQL_C_SLONG, &isFourDigits, sizeof(isFourDigits), &isFourDigitsLen) != SQL_SUCCESS) continue;
 
             server.ip = (ipLen != SQL_NULL_DATA) ? ip : L"";
             server.login = (loginLen != SQL_NULL_DATA) ? login : L"";
             server.pass = (passLen != SQL_NULL_DATA) ? pass : L"";
+
+            if (isFourDigitsLen != SQL_NULL_DATA && isFourDigits == 1) {
+                size_t len = wcslen(remoteFolderPath);
+
+                if (len + 1 < 256) {
+                    for (size_t i = len + 1; i > 1; --i) {
+                        remoteFolderPath[i] = remoteFolderPath[i - 1];
+                    }
+
+                    remoteFolderPath[1] = L'1';
+                }
+            }
+
             server.remoteFolderPath = (remoteFolderPathLen != SQL_NULL_DATA) ? remoteFolderPath : L"";
 
-            logError(L"[FTP] Checking connection for IP: " + server.ip + L"/" + server.remoteFolderPath + L"/");
+            logFtpError(L"[FTP] Checking connection for IP: " + server.ip + L"/" + server.remoteFolderPath + L"/");
             if (status == 1) {
                 std::wstring url = Ftp::protocol() + server.ip + L"/" + server.remoteFolderPath + L"/";
                 if (!checkConnection(wstringToString(url), wstringToString(server.login), wstringToString(server.pass))) {
-                    logError(L"[FTP] Connection failed for " + server.ip + L"/" + server.remoteFolderPath + L"/");
+                    logFtpError(L"[FTP] Connection failed for " + server.ip + L"/" + server.remoteFolderPath + L"/");
                     continue;
                 }
             }
@@ -135,24 +148,23 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
             server.object = (objectLen != SQL_NULL_DATA) ? object : L"";
             server.status = (statusLen != SQL_NULL_DATA) ? status : -1;
             server.localFolderPath = (localFolderPathLen != SQL_NULL_DATA) ? localFolderPath : L"";
-            //server.reconId = (reconIdLen != SQL_NULL_DATA) ? reconId : -1;
 
-            logError(L"[FTP] Adding server with IP: " + server.ip);
+            logFtpError(L"[FTP] Adding server with IP: " + server.ip);
             servers.push_back(server);
         }
     }
     catch (const std::exception& e) {
-        logError(L"[FTP] Exception in collectServers: " + stringToWString(e.what()));
+        logFtpError(L"[FTP] Exception in collectServers: " + stringToWString(e.what()));
     }
     catch (...) {
-        logError(L"[FTP] Unknown exception in collectServers!");
+        logFtpError(L"[FTP] Unknown exception in collectServers!");
     }
 
 cleanup:
-    logError(L"[FTP] Cleaning up SQL statement...");
+    logFtpError(L"[FTP] Cleaning up SQL statement...");
     SQLFreeStmt(stmt, SQL_CLOSE);
     SQLFreeHandle(SQL_HANDLE_STMT, stmt);
-    logError(L"[FTP] collectServers completed.");
+    logFtpError(L"[FTP] collectServers completed.");
 }
 
 void Ftp::setFileTime(const std::string& filePath, const std::string& timestamp)
@@ -165,7 +177,7 @@ void Ftp::setFileTime(const std::string& filePath, const std::string& timestamp)
         &sysTime.wYear, &sysTime.wMonth, &sysTime.wDay,
         &sysTime.wHour, &sysTime.wMinute, &sysTime.wSecond) != 6)
     {
-        logError(L"Invalid timestamp format: " + stringToWString(timestamp));
+        logFtpError(L"Invalid timestamp format: " + stringToWString(timestamp));
         return;
     }
 
@@ -173,7 +185,7 @@ void Ftp::setFileTime(const std::string& filePath, const std::string& timestamp)
     // Преобразуем SYSTEMTIME в FILETIME
     if (!SystemTimeToFileTime(&sysTime, &fileTime))
     {
-        logError(L"Failed to convert system time to file time");
+        logFtpError(L"Failed to convert system time to file time");
         return;
     }
 
@@ -182,14 +194,14 @@ void Ftp::setFileTime(const std::string& filePath, const std::string& timestamp)
         nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE)
     {
-        logError(L"Failed to open file for setting time: " + stringToWString(filePath));
+        logFtpError(L"Failed to open file for setting time: " + stringToWString(filePath));
         return;
     }
 
     // Устанавливаем только время модификации файла
     if (!SetFileTime(hFile, nullptr, nullptr, &fileTime))
     {
-        logError(L"Failed to set file modification time: " + stringToWString(filePath));
+        logFtpError(L"Failed to set file modification time: " + stringToWString(filePath));
     }
 
     CloseHandle(hFile);
@@ -205,7 +217,7 @@ static size_t throw_away(void* ptr, size_t size, size_t nmemb, void* data)
 // Загрузка файла с сервера 
 bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, const std::string url, const std::wstring& ftpCacheDirPath)
 {
-    // logError("[FTP]: Starting file download for " + fileName + " from URL: " + url);
+    // logFtpError("[FTP]: Starting file download for " + fileName + " from URL: " + url);
 
     CURL* curl;
     FILE* file = nullptr;
@@ -217,7 +229,7 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
     if (curl) {
         // Construct the file path and convert it to a wide string for _wfopen
         dataFile = ftpCacheDirPath + L"/" + stringToWString(fileName);
-        // logError("[FTP]: Constructed file path for download: " + dataFile);
+        // logFtpError("[FTP]: Constructed file path for download: " + dataFile);
 
         // Set URL and credentials for the download
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -226,13 +238,13 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
         // Try to open the file for writing with _wfopen
         file = _wfopen(dataFile.c_str(), L"wb");
         if (file == nullptr) {
-            logError(L"[FTP3]: Error opening file for writing: " + stringToWString(fileName));
-            logError(L"[FTP4]: Full file path: " + dataFile);
+            logFtpError(L"[FTP3]: Error opening file for writing: " + stringToWString(fileName));
+            logFtpError(L"[FTP4]: Full file path: " + dataFile);
             perror("fopen");  // Outputs error to stderr for debugging
             curl_easy_cleanup(curl);
             return false;
         }
-        // logError("[FTP]: File opened successfully for writing: " + dataFile);
+        // logFtpError("[FTP]: File opened successfully for writing: " + dataFile);
 
         // Set the write function and data handler for the download
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
@@ -241,7 +253,7 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
         // Perform the file download
         res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
-            logError(L"[FTP5]: Error during file download for " + stringToWString(fileName) + L": " + stringToWString(curl_easy_strerror(res)));
+            logFtpError(L"[FTP5]: Error during file download for " + stringToWString(fileName) + L": " + stringToWString(curl_easy_strerror(res)));
             fclose(file);
             curl_easy_cleanup(curl);
             return false;
@@ -267,21 +279,21 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
                 std::string timestamp = std::string(buffer); 
                 setFileTime(wstringToString(dataFile), timestamp);
 
-                //logError(L"[FTP]: File timestamp (UTC): " + stringToWString(timestamp));
+                //logFtpError(L"[FTP]: File timestamp (UTC): " + stringToWString(timestamp));
             }
         }
         else {
-            logError(L"Failed to get file time!");
+            logFtpError(L"Failed to get file time!");
             curl_easy_cleanup(curl);
         }
 
-        // logError("[FTP]: File downloaded successfully: " + fileName);
+        // logFtpError("[FTP]: File downloaded successfully: " + fileName);
 
         // Cleanup after download
         curl_easy_cleanup(curl);
     }
     else {
-        logError(L"[FTP6]: Failed to initialize CURL for downloading: " + stringToWString(fileName));
+        logFtpError(L"[FTP6]: Failed to initialize CURL for downloading: " + stringToWString(fileName));
     }
 
     // The next rows might be for deleting 
@@ -302,7 +314,7 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
         fclose(file);
     }
 
-    //logError(L"[FTP]: Finished attempting to download file: " + stringToWString(fileName));
+    //logFtpError(L"[FTP]: Finished attempting to download file: " + stringToWString(fileName));
     return true;
 }
 
@@ -315,7 +327,7 @@ int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const
 
     curl = curl_easy_init();
     if (!curl) {
-        logError(L"[FTP9]: Error generating CURL.");
+        logFtpError(L"[FTP9]: Error generating CURL.");
         return -1;
     }
 
@@ -331,13 +343,13 @@ int Ftp::deleteFile(const std::string& filename, const ServerInfo& server, const
     long response_code;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     if (response_code == 250) {
-        logError(stringToWString("[FTP]: File successfully deleted: ") + stringToWString(fullRemotePath));
+        logFtpError(stringToWString("[FTP]: File successfully deleted: ") + stringToWString(fullRemotePath));
         curl_easy_cleanup(curl);
         return 1;    
     }
     else {
         if (res != CURLE_FTP_COULDNT_RETR_FILE) {
-            logError(stringToWString("[FTP]: Error deleting file: ") + stringToWString(curl_easy_strerror(res)));
+            logFtpError(stringToWString("[FTP]: Error deleting file: ") + stringToWString(curl_easy_strerror(res)));
             curl_easy_cleanup(curl);
             return 1;
         }
@@ -370,7 +382,7 @@ bool Ftp::checkConnection(const std::string& url, const std::string login, const
             connectionSuccessful = true;
         }
         else {
-            //logError(L"[FTP10]: Не удалось установить соединение " + stringToWString(url) + L": " + stringToWString(curl_easy_strerror(res)));
+            //logFtpError(L"[FTP10]: Не удалось установить соединение " + stringToWString(url) + L": " + stringToWString(curl_easy_strerror(res)));
             connectionSuccessful = false;
         }
 
@@ -378,7 +390,7 @@ bool Ftp::checkConnection(const std::string& url, const std::string login, const
         return connectionSuccessful;
     }
     else {
-        logError(stringToWString("[FTP11]: Ошибка инициализации libcurl"));
+        logFtpError(stringToWString("[FTP11]: Ошибка инициализации libcurl"));
         return false;
     }
 }
@@ -409,7 +421,7 @@ bool Ftp::isServerActive(const ServerInfo& server, SQLHDBC dbc)
     }
     else {
         std::wstring errorMsg = stringToWString("[FTP]: Не удалось выполнить SQL запрос для проверки состояния сервера!");
-        logError(errorMsg);
+        logFtpError(errorMsg);
     }
 
     SQLFreeHandle(SQL_HANDLE_STMT, stmt);
@@ -486,7 +498,7 @@ bool startsWithValidPrefix(const std::string& fileName) {
 void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath)
 {
     try {
-        logError(L"[FTP] Starting file transfer for: " + stringToWString(url));
+        logFtpError(L"[FTP] Starting file transfer for: " + stringToWString(url));
 
         std::string fileListStr;
         CURL* curl;
@@ -499,20 +511,29 @@ void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const s
             curl_easy_setopt(curl, CURLOPT_DIRLISTONLY, 1L);
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_list);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &fileListStr);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L); // секунд
 
-            //logError(L"[FTP] Executing curl_easy_perform...");
+            //logFtpError(L"[FTP] Executing curl_easy_perform...");
             res = curl_easy_perform(curl);
-            logError(L"[FTP] curl_easy_perform() result: " + stringToWString(curl_easy_strerror(res)));
+            logFtpError(L"[FTP] curl_easy_perform() result: " + stringToWString(curl_easy_strerror(res)));
 
             if (res == CURLE_OK) {
                 std::istringstream iss(fileListStr);
                 std::string fileName;
-                //logError(L"While is starting...");
+                //logFtpError(L"While is starting...");
                 while (std::getline(iss, fileName)) {
                     try {
                         if (!ftpIsActive.load(std::memory_order_acquire)) {
                             std::this_thread::sleep_for(std::chrono::seconds(1));
                             continue;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                        size_t maxFilesPerSession = 500;
+                        size_t processedFiles = 0;
+
+                        if (++processedFiles > maxFilesPerSession) {
+                            // logFtpError(L"[FTP] Max file limit reached, stopping early.");
+                            break;
                         }
 
                         if (!fileName.empty()) {
@@ -520,12 +541,12 @@ void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const s
 
                             bool serverActive = false;
                             try {
-                                //logError(L"[FTP] Checking server activity...");
+                                //logFtpError(L"[FTP] Checking server activity...");
                                 serverActive = isServerActive(server, dbc);
-                                //logError(L"[FTP] Server activity status: " + std::to_wstring(serverActive));
+                                //logFtpError(L"[FTP] Server activity status: " + std::to_wstring(serverActive));
                             }
                             catch (const std::exception& e) {
-                                logError(stringToWString("[FTP] Exception in isServerActive: ") + stringToWString(e.what()));
+                                logFtpError(stringToWString("[FTP] Exception in isServerActive: ") + stringToWString(e.what()));
                                 continue;
                             }
 
@@ -549,25 +570,42 @@ void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const s
                                         std::wstring oneDriveFullPathToFile = oneDrivePath + L"/" + firstPart + L"/" + secondPart + L"/" +
                                             (server.substation) + L"/" + (server.object) + L"/" + stringToWString(fileName);
 
+
                                         try {
-                                            if (!fs::exists(oneDriveFullPathToFile)) {
-                                                fs::copy_file(fs::path(ftpCacheDirPath) / fileName, oneDriveFullPathToFile);
+                                            if (oneDriveFullPathToFile.length() >= 260) { 
+                                                logOneDriveError(L"[OneDrive] Path too long, file skipped: " + oneDriveFullPathToFile);
+                                                continue;
                                             }
+                                            if (!fs::exists(oneDriveFullPathToFile)) {
+
+                                                fs::copy_file(fs::path(ftpCacheDirPath) / fileName, oneDriveFullPathToFile, fs::copy_options::overwrite_existing);
+
+                                                logOneDriveError(L"[OneDrive] File copied successfully: " + oneDriveFullPathToFile);
+                                            }
+
                                         }
-                                        catch (const std::exception& e) {
-                                            logError(L"[FTP] Error copying file to OneDrive: " + stringToWString(e.what()));
+                                        catch (const fs::filesystem_error& e) {
+                                            std::wstring path = fs::path(ftpCacheDirPath).wstring() + L"/" + stringToWString(fileName);
+
+                                            std::wstring errorMessage = L"[OneDrive] Error copying file to OneDrive: ";
+                                            errorMessage += utf8_to_wstring(e.what());
+                                            errorMessage += L"\nSource file: " + path;
+                                            errorMessage += L"\nTarget file: " + oneDriveFullPathToFile;
+                                            logOneDriveError(errorMessage);
+
+                                            continue; 
                                         }
                                     }
                                 }
                             }
                             else {
-                                logError(L"[FTP] Server is not active, skipping file: " + stringToWString(fileName));
+                                logFtpError(L"[FTP] Server is not active, skipping file: " + stringToWString(fileName));
                                 continue;
                             }
                         }
                     }
                     catch (const std::exception& e) {
-                        logError(stringToWString("[FTP] Error during file processing: ") + stringToWString(e.what()));
+                        logFtpError(stringToWString("[FTP] Error during file processing: ") + stringToWString(e.what()));
                         continue;
                     }
                 }
@@ -575,27 +613,27 @@ void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const s
             else {
                 std::string errorMessage = curl_easy_strerror(res);
                 if (errorMessage == "Access denied to remote resource") {
-                    logError(stringToWString("[FTP] Error retrieving file list: Remote folder not found at ") + stringToWString(url));
+                    logFtpError(stringToWString("[FTP] Error retrieving file list: Remote folder not found at ") + stringToWString(url));
                 }
                 else {
-                    logError(stringToWString("[FTP] Error retrieving file list: ") + stringToWString(errorMessage));
+                    logFtpError(stringToWString("[FTP] Error retrieving file list: ") + stringToWString(errorMessage));
                 }
             }
 
-            //logError(L"[FTP] Cleaning up CURL...");
+            //logFtpError(L"[FTP] Cleaning up CURL...");
             curl_easy_cleanup(curl);
         }
         else {
-            logError(L"[FTP] Failed to initialize CURL.");
+            logFtpError(L"[FTP] Failed to initialize CURL.");
         }
 
-        logError(L"[FTP] File transfer completed.");
+        logFtpError(L"[FTP] File transfer completed.");
     }
     catch (const std::exception& e) {
-        logError(stringToWString("[FTP] Fatal error during fileTransfer: ") + stringToWString(e.what()));
+        logFtpError(stringToWString("[FTP] Fatal error during fileTransfer: ") + stringToWString(e.what()));
     }
     catch (...) {
-        logError(L"[FTP] Unknown fatal error during fileTransfer.");
+        logFtpError(L"[FTP] Unknown fatal error during fileTransfer.");
     }
 }
 

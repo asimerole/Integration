@@ -37,9 +37,26 @@
 #include <openssl/buffer.h>
 #include <openssl/rand.h>
 
-void trimLogFile();
-// Method for logging error messages
-void logError(const std::wstring& message);				
+// Размер и имя файла ошибок 
+const std::string LOG_FILE = "Errors.txt";
+const std::string FTP_LOG_FILE = "ErrorsFTP.txt";
+const std::string INTEGRATION_LOG_FILE = "ErrorsIntegration.txt";
+const std::string EMAIL_LOG_FILE = "ErrorsEmail.txt";
+const std::string ONEDRIVE_LOG_FILE = "ErrorsOneDrive.txt";
+
+void trimLogFile(const std::string& filePath);
+
+void logToFile(const std::wstring& message, const std::string& filePath);
+
+void logError(const std::wstring& message);
+
+void logFtpError(const std::wstring& message);
+
+void logIntegrationError(const std::wstring& message);
+
+void logEmailError(const std::wstring& message);
+ 
+void logOneDriveError(const std::wstring& message);
 
 // Method to convert "utf8" string to "wstring" format
 std::wstring utf8_to_wstring(const std::string& str);	
