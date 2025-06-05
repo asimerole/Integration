@@ -10,8 +10,6 @@
 #define SQLTEXT(str) str
 #endif
 
-// Размер и имя файла ошибок 
-const std::string LOG_FILE = "Errors.txt";
 const size_t MAX_LOG_SIZE = 150 * 1024;  // Максимальный размер в байтах (150 KB)
 const size_t MAX_LOG_LINES = 500;       // Максимальное количество строк в логе
 
@@ -33,8 +31,8 @@ unsigned char iv[IV_SIZE] = {
     0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30
 };
 
-void trimLogFile() {
-    std::ifstream file(LOG_FILE);
+void trimLogFile(const std::string& filePath) {
+    std::ifstream file(filePath);
     if (!file.is_open()) return;
 
     std::deque<std::string> lines;  // Используем deque для экономии памяти
@@ -51,7 +49,7 @@ void trimLogFile() {
 
     // Перезаписываем файл только если он действительно стал больше лимита
     if (lines.size() == MAX_LOG_LINES) {
-        std::ofstream outFile(LOG_FILE, std::ios::trunc);
+        std::ofstream outFile(filePath, std::ios::trunc);
         if (!outFile.is_open()) return;
 
         for (const auto& l : lines) {
@@ -60,16 +58,16 @@ void trimLogFile() {
     }
 }
 
-void logError(const std::wstring& message) {
+void logToFile(const std::wstring& message, const std::string& filePath) {
     // Проверяем размер файла
-    std::ifstream file(LOG_FILE, std::ios::ate | std::ios::binary);
+    std::ifstream file(filePath, std::ios::ate | std::ios::binary);
     std::streampos fileSize = file.tellg();
     if (fileSize != -1 && static_cast<size_t>(fileSize) > MAX_LOG_SIZE) {
         file.close();
-        trimLogFile();
+        trimLogFile(filePath);
     }
 
-    std::wofstream logFile(LOG_FILE, std::ios::app);
+    std::wofstream logFile(filePath, std::ios::app);
     if (!logFile.is_open()) return;
 
     auto now = std::chrono::system_clock::now();
@@ -79,6 +77,26 @@ void logError(const std::wstring& message) {
         << L" - " << message << std::endl;
 
     logFile.close();
+}
+
+void logError(const std::wstring& message) {
+    logToFile(message, LOG_FILE);
+}
+
+void logFtpError(const std::wstring& message) {
+    logToFile(message, FTP_LOG_FILE);
+}
+
+void logIntegrationError(const std::wstring& message) {
+    logToFile(message, INTEGRATION_LOG_FILE);
+}
+
+void logEmailError(const std::wstring& message) {
+    logToFile(message, EMAIL_LOG_FILE);
+}
+
+void logOneDriveError(const std::wstring& message) {
+    logToFile(message, ONEDRIVE_LOG_FILE);
 }
 
 std::wstring utf8_to_wstring(const std::string& str) {

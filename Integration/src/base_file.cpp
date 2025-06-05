@@ -2,22 +2,32 @@
 
 
 std::string BaseFile::readFileContent() {
-    std::ifstream file(fullPath, std::ios::binary);
+    std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        //logError(stringToWString("[BaseFile]: Error opening file: ") + filePath + stringToWString(" to read date and time"));
         return "";
     }
 
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    file.close();
-    return buffer.str();
+    std::streamsize size = file.tellg();
+    binaryDataSize = size;
+
+    file.seekg(0, std::ios::beg);       
+
+    std::string buffer(size, '\0');
+    if (!file.read(&buffer[0], size)) {
+        return "";
+    }
+
+    return buffer;
 }
+
 
 void BaseFile::processPath(std::wstring rootFolder)
 {
     // We get the path to the parent folder
     fs::path parentPath = parentFolderPath;
+    if (parentPath.filename() == ".")
+        parentPath = parentPath.parent_path();
+
     std::wstring parentFolderName = parentPath.filename().wstring();
 
     // Check if the file is in a sorted folder
@@ -50,7 +60,7 @@ void BaseFile::processPath(std::wstring rootFolder)
         reconNum = std::stoi(fileName.substr(5, 3));
     }
     else {
-        logError(L"[BaseFile::processPath] fileName.size() <= 8. File name: " + fileName);
+        logIntegrationError(L"[BaseFile::processPath] fileName.size() <= 8. File name: " + fileName);
     }
 
     reconNumber = reconNum;
@@ -61,7 +71,7 @@ bool BaseFile::getFileDateAndTime()
     WIN32_FILE_ATTRIBUTE_DATA fileInfo;
 
     if (!GetFileAttributesExW(fullPath.c_str(), GetFileExInfoStandard, &fileInfo)) {
-        logError(L"[getFileDateAndTime]: Error opening file");
+        logIntegrationError(L"[getFileDateAndTime]: Error opening file");
         return false;
     }
 
@@ -91,18 +101,19 @@ bool BaseFile::getFileDateAndTime()
 void ExpressFile::readDataFromFile() {
     try {
         std::string fileContent = readFileContent();
+
         std::string utf8Content = cp866_to_utf8(fileContent);
         std::wstring wideFileContent = stringToWString(utf8Content);
-
         binaryData = fileContent;
 
+
         std::map<std::wstring, std::wregex> regexMap = {
-            {L"date", std::wregex(stringToWString("Дата:\\s*(\\d{2}/\\d{2}/\\d{4})"))},
-            {L"time", std::wregex(stringToWString("Время\\s+пуска:\\s*(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})"))},
-            {L"reconObject", std::wregex(stringToWString("Объект:\\s*(.*)"))},
-            {L"factor", std::wregex(stringToWString("Фактор пуска:\\s*(.*)"))},
-            {L"typeKz", std::wregex(stringToWString("Повреждение.*:\\s*(.*)"))},
-            {L"damagedLine", std::wregex(stringToWString("Поврежденная линия, предположительно:\\s*(.*)"))}
+            {L"date", std::wregex(L"Дата:\\s*(\\d{2}/\\d{2}/\\d{4})")},
+            {L"time", std::wregex(L"Время\\s+пуска:\\s*(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})")},
+            {L"reconObject", std::wregex(L"Объект:\\s*(.*)")},
+            {L"factor", std::wregex(L"Фактор пуска:\\s*(.*)")},
+            {L"typeKz", std::wregex(L"Повреждение.*:\\s*(.*)")},
+            {L"damagedLine", std::wregex(L"Поврежденная линия, предположительно:\\s*(.*)")}
         };
 
         date = Integration::extractValueWithRegex(wideFileContent, regexMap[L"date"]);
@@ -135,6 +146,6 @@ void ExpressFile::readDataFromFile() {
 
     }
     catch (const std::exception& e) {
-        logError(stringToWString("Exception caught in readDataFromFile: ") + fileName + L" " + stringToWString(e.what()));
+        logIntegrationError(stringToWString("Exception caught in readDataFromFile: ") + fileName + L" " + stringToWString(e.what()));
     }
 }
