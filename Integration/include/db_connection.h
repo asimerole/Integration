@@ -33,7 +33,7 @@ public:
 
 	// Methods for work with Database
 	// Подключение к базе
-	void connectToDatabase();											
+	bool connectToDatabase();											
 
 	// Выполнение SQL запроса 
 	static bool executeSQL(SQLHDBC dbc, const std::wstringstream& sql);	

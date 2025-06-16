@@ -266,7 +266,6 @@ bool readConfigFile(std::string& configPath, std::string& serverName, std::strin
 
     // Преобразуем расшифрованные данные в строку
     std::string decryptedString(decryptedData.begin(), decryptedData.end());
-
     // Разбираем конфигурацию построчно
     std::istringstream in(decryptedString);
     std::string line;

@@ -152,7 +152,7 @@ bool Database::isConnected()
 }
 
 // Метод подключения к БД
-void Database::connectToDatabase() {
+bool Database::connectToDatabase() {
     try {
         // Найти конфигурационный файл
         std::string configFilePath = findConfigFile();
@@ -160,27 +160,31 @@ void Database::connectToDatabase() {
         readConfigFile(configFilePath, server, database, username, password);
 
         if (server.empty() || database.empty() || username.empty() || password.empty()) {
-            throw std::runtime_error("Missing parameters in the configuration file");
+            logError(L"Check for missing params: server:" + stringToWString(server) +
+                L"\ndatabase: " + stringToWString(database) +
+                L"\nusername: " + stringToWString(username) +
+                L"\npassword: " + stringToWString(password));
+            return false;
         }
 
         // Инициализация ODBC окружения
         SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
         if (!SQL_SUCCEEDED(ret)) {
-            throw std::runtime_error("Failed to allocate ODBC environment handle");
+            return false;
         }
 
         ret = SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, (void*)SQL_OV_ODBC3, 0);
         if (!SQL_SUCCEEDED(ret)) {
-            SQLFreeHandle(SQL_HANDLE_ENV, env); // Освобождаем `env` при ошибке
+            SQLFreeHandle(SQL_HANDLE_ENV, env);
             env = SQL_NULL_HENV;
-            throw std::runtime_error("Failed to set ODBC version");
+            return false;
         }
 
         ret = SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc);
         if (!SQL_SUCCEEDED(ret)) {
-            SQLFreeHandle(SQL_HANDLE_ENV, env); // Освобождаем `env`, так как `dbc` не создался
+            SQLFreeHandle(SQL_HANDLE_ENV, env);
             env = SQL_NULL_HENV;
-            throw std::runtime_error("Failed to allocate ODBC connection handle");
+            return false;
         }
 
         std::string connectionString =
@@ -199,13 +203,14 @@ void Database::connectToDatabase() {
 
         ret = SQLDriverConnect(dbc, NULL, connStr, SQL_NTS, outStr, sizeof(outStr) / sizeof(SQLWCHAR), &outStrLen, SQL_DRIVER_NOPROMPT);
         if (!SQL_SUCCEEDED(ret)) {
-            SQLFreeHandle(SQL_HANDLE_DBC, dbc); // Освобождаем `dbc`
-            SQLFreeHandle(SQL_HANDLE_ENV, env); // Освобождаем `env`
+            SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+            SQLFreeHandle(SQL_HANDLE_ENV, env);
             dbc = SQL_NULL_HDBC;
             env = SQL_NULL_HENV;
-            throw std::runtime_error("Failed to connect to the database");
+            return false;
         }
 
+        return true; // Успешное подключение
     }
     catch (const std::exception& e) {
         logError(stringToWString("Exception caught in connectToDatabase: ") + stringToWString(e.what()));
@@ -218,9 +223,10 @@ void Database::connectToDatabase() {
             SQLFreeHandle(SQL_HANDLE_ENV, env);
             env = SQL_NULL_HENV;
         }
+
+        return false;
     }
 }
-
 
 // Метод выполнения запроса в БД
 bool Database::executeSQL(SQLHDBC dbc, const std::wstringstream& sql) {
