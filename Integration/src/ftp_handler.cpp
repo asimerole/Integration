@@ -528,7 +528,7 @@ void Ftp::fileTransfer(const ServerInfo& server, const std::string& url, const s
                 size_t maxFilesPerSession = 500;
                 size_t processedFiles = 0;
                 std::vector<std::string> fileBatch;
-                fileBatch.reserve(100); // Обрабатываем файлы пачками по 100
+                fileBatch.reserve(100); 
 
                 auto processBatch = [&]() -> bool {
                     if (!isServerActive(server, dbc)) {
