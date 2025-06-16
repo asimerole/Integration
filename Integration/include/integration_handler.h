@@ -22,6 +22,37 @@ public:
     // Run OMP_C program
     static bool runExternalProgramWithFlag(const std::wstring& programPath, const std::wstring& inputFilePath);
 
+    // Collect paths to files 
+    static void collectRootPaths(std::unordered_set<std::wstring>& parentFolders, const std::wstring rootFolder);
+
+    // General integration method
+    static void fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::atomic_bool& mailingIsActive, std::atomic_bool& dbIsFull);
+
+    // Method for sorting by folders
+    static void sortFiles(const FileInfo& fileInfo);
+
+    // General method of collecting information and a pair of files
+    static void collectInfo(FileInfo& fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, SQLHDBC dbc);
+
+    // Method to get path for file by recon number
+    static std::wstring getPathByRNumber(int recon_id, SQLHDBC dbc);
+
+    //Getting values ​​by markers in a file
+    static std::wstring extractParamValue(const std::wstring& content, const std::wstring& marker);
+
+    // Getting values ​​by regular expressions
+    static std::wstring extractValueWithRegex(const std::wstring& content, const std::wregex& regex);
+
+    // Helper function for concatenating strings with a separator
+    static std::wstring join(const std::vector<std::wstring>& parts, const std::wstring& delimiter);
+
+    // Checking a folder for sorted name
+    static bool isSortedFolder(const std::wstring& folderName);
+
+    // Insert last ping into serverPings struct
+    static void insertServerPing(int reconId, std::time_t lastPing);
+
+private:
     // Checking file name for validity
     static bool isFileNameValid(const std::wstring& fileName);
  
@@ -33,18 +64,6 @@ public:
 
     // Checking file for type rnet. prpusk. daily и diagn
     static bool checkIsOtherFiles(const std::wstring& fileName);
-
-    // Checking a folder for sorted name
-    static bool isSortedFolder(const std::wstring& folderName);
-
-    //Getting values ​​by markers in a file
-    static std::wstring extractParamValue(const std::wstring& content, const std::wstring& marker);
-
-    // Getting values ​​by regular expressions
-    static std::wstring extractValueWithRegex(const std::wstring& content, const std::wregex& regex);
-
-    // Collect paths to files 
-    static void collectRootPaths(std::set<std::wstring>& parentFolders, const std::wstring rootFolder);
 
     // Getting id's from tables: data, units, struct 
     static std::tuple<int, int, int, int> getRecordIDs(SQLHDBC dbc, std::shared_ptr<BaseFile> file, bool needDataProcess);
@@ -61,25 +80,14 @@ public:
     // Insert into data_process
     static int insertIntoProcessTable(SQLHDBC dbc, const std::shared_ptr<BaseFile> file, int data_id);
 
-    // General integration method
-    static void fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::atomic_bool& mailingIsActive);
+    // Insert into logs
+    static void insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int struct_id);
 
-    // Helper function for concatenating strings with a separator
-    static std::wstring join(const std::vector<std::wstring>& parts, const std::wstring& delimiter); 
-
-    // General method of collecting information and a pair of files
-    static void collectInfo(FileInfo &fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, SQLHDBC dbc);
-
-    // Method for sorting by folders
-    static void sortFiles(const FileInfo& fileInfo);
-
-    // Method to get path for file by recon number
-    static std::wstring getPathByRNumber(int recon_id, SQLHDBC dbc);
-
-
-private:
     // Storing file paths
-    std::set<std::wstring> parentFolders;
+    std::unordered_set<std::wstring> parentFolders;
+     
+    // Storing last server pings for Logs table 
+    static std::map<int, std::time_t> serverPings;
 	
     // Path to root folder
     std::wstring rootFolder;

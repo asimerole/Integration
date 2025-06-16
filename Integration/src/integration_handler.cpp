@@ -17,6 +17,8 @@ std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
 
 const std::wstring pathToOMPExecutable = L"C:\\Recon\\WinRec-BS\\OMP_C"; // Path to OMP_C app
 
+std::map<int, std::time_t> Integration::serverPings;
+
 // Method of starting an external program with a flag and waiting for it to complete
 bool Integration::runExternalProgramWithFlag(const std::wstring& programPath, const std::wstring& inputFilePath) {
     try {
@@ -108,6 +110,11 @@ bool Integration::isSortedFolder(const std::wstring& folderName) {
     return false;
 }
 
+void Integration::insertServerPing(int reconId, std::time_t lastPing)
+{
+    serverPings[reconId] = lastPing;
+}
+
 // Function to extract value from parameter string
 std::wstring Integration::extractParamValue(const std::wstring& content, const std::wstring& marker) {
     std::size_t pos = content.rfind(marker);
@@ -136,7 +143,7 @@ std::wstring Integration::extractValueWithRegex(const std::wstring& content, con
 }
 
 // Collecting file paths
-void Integration::collectRootPaths(std::set<std::wstring>& parentFolders, const std::wstring rootFolder) {
+void Integration::collectRootPaths(std::unordered_set<std::wstring>& parentFolders, const std::wstring rootFolder) {
     try {
         std::wstring fullPath;
         std::wstring currentDir;
@@ -597,8 +604,233 @@ int Integration::insertIntoProcessTable(SQLHDBC dbc, const std::shared_ptr<BaseF
     return dataProcess_id;
 }
 
+std::wstring formatDateTime(std::time_t time)
+{
+    std::tm* tm_ptr = std::localtime(&time);
+    std::wostringstream woss;
+    woss << std::put_time(tm_ptr, L"%Y-%m-%d %H:%M:%S");
+    return woss.str(); 
+}
+
+void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int struct_id)
+{
+    std::shared_ptr<ExpressFile> expressFile = nullptr;
+    std::shared_ptr<DataFile> dataFile = nullptr;
+    std::shared_ptr<BaseFile> baseFile = nullptr;
+
+    int filesCount = fileInfo.files.size();
+
+    switch (filesCount) {
+    case 1:
+        if (typeid(*fileInfo.files[0]) == typeid(BaseFile)) {
+            baseFile = std::dynamic_pointer_cast<BaseFile>(fileInfo.files[0]);
+        }
+        else {
+            logIntegrationError(L"[Integration] Expected only BaseFile, got derived type.");
+            return;
+        }
+        break;
+
+    case 2:
+        for (const auto& file : fileInfo.files) {
+            if (auto ef = std::dynamic_pointer_cast<ExpressFile>(file)) {
+                expressFile = ef;
+            }
+            else if (auto df = std::dynamic_pointer_cast<DataFile>(file)) {
+                dataFile = df;
+            }
+            else {
+                logIntegrationError(L"[Integration] Unknown file type in fileInfo.files.");
+                return;
+            }
+        }
+        break;
+
+    default:
+        logIntegrationError(L"[Integration] Unexpected number of files. Expected 1 or 2.");
+        return;
+    }
+
+    // Get reconId
+    int reconId = (baseFile) ? baseFile->reconNumber : (dataFile) ? dataFile->reconNumber : 0;
+
+    // last_ping
+    std::wstring lastPingDateTimeStr;
+    auto it = serverPings.find(reconId);
+    if (it != serverPings.end()) {
+        std::time_t pingTime = it->second;
+        lastPingDateTimeStr = formatDateTime(pingTime);
+    }
+
+    // last_recon
+    std::wstring lastReconDateTimeStr;
+    if (expressFile && dataFile) {
+        lastReconDateTimeStr = expressFile->date + L" " + expressFile->time;
+    }
+
+    // last_daily
+    std::wstring lastDailyDateTimeStr;
+    if (baseFile && baseFile->fileName.substr(0, 5) == L"DAILY") {
+        lastDailyDateTimeStr = baseFile->date + L" " + baseFile->time;
+    }
+
+    SQLHSTMT hstmt = SQL_NULL_HSTMT;
+    SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
+    if (!SQL_SUCCEEDED(ret)) {
+        logIntegrationError(L"[Integration] Failed to allocate SQL handle");
+        return;
+    }
+
+    std::wstring checkQuery = LR"(
+    SELECT 
+        s.id, 
+        (SELECT COUNT(*) FROM [ReconDB].[dbo].[logs] l WHERE l.recon_id = s.id) AS log_count
+    FROM 
+        [ReconDB].[dbo].[struct] s
+    WHERE 
+        s.recon_id = ?
+)";
+
+    ret = SQLPrepareW(hstmt, (SQLWCHAR*)checkQuery.c_str(), SQL_NTS);
+    if (!SQL_SUCCEEDED(ret)) {
+        logSQLError("Failed to prepare combined checkQuery ", hstmt, SQL_HANDLE_STMT);
+        SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+        return;
+    }
+
+    SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &reconId, 0, nullptr);
+
+    int idFromStruct = 0;
+    int count = 0;
+
+    ret = SQLExecute(hstmt);
+    if (!SQL_SUCCEEDED(ret)) {
+        logSQLError("Failed to execute combined checkQuery ", hstmt, SQL_HANDLE_STMT);
+        SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+        return;
+    }
+
+    if (SQLFetch(hstmt) == SQL_SUCCESS) {
+        SQLGetData(hstmt, 1, SQL_C_SLONG, &idFromStruct, 0, nullptr);
+        SQLGetData(hstmt, 2, SQL_C_SLONG, &count, 0, nullptr);
+    }
+
+    SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+
+
+    std::wstringstream debugLog;
+    // Composing an INSERT or UPDATE
+    std::wstring query = L"";
+
+    if (count > 0) {
+        query += LR"(UPDATE[ReconDB].[dbo].[logs] SET )";
+        if (lastPingDateTimeStr.size() > 0) {
+            query += LR"(last_ping = ?, )";
+        }
+        
+        if (filesCount > 1) {
+            query += LR"(last_recon = ? )";
+        } 
+        else {
+            if (lastDailyDateTimeStr.size() > 0) {
+                query += LR"(last_daily = ? )";
+            }
+        }
+
+        query += LR"(WHERE recon_id = ? )";
+    }
+    else {
+        query = LR"(
+            INSERT INTO [ReconDB].[dbo].[logs]
+            ( 
+        )";
+        std::wstring values = L"VALUES (";
+        bool first = true;
+        if (lastPingDateTimeStr.size() > 0) {
+            query += L"last_ping";
+            values += L"?";
+            first = false;
+        }
+
+        if (filesCount > 1) {
+            if (!first) {
+                query += L", ";
+                values += L", ";
+            }
+            query += L"last_recon";
+            values += L"?";
+        }
+        else {
+            if (!first) {
+                query += L", ";
+                values += L", ";
+            }
+            query += L"last_daily";
+            values += L"?";
+        }
+
+        query += L", recon_id) ";
+        values += L", ?)";
+
+        query += values;
+    }
+
+    debugLog << L"[DEBUG] SQL query: " << query;
+    debugLog << L"\n[DEBUG] filesCount = " << filesCount << L", count = " << count;
+    ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
+    if (!SQL_SUCCEEDED(ret)) {
+        logIntegrationError(L"Failed to allocate handle for insert/update");
+        return;
+    }
+
+    ret = SQLPrepareW(hstmt, (SQLWCHAR*)query.c_str(), SQL_NTS);
+    if (!SQL_SUCCEEDED(ret)) {
+        logSQLError("Failed to prepare insert/update", hstmt, SQL_HANDLE_STMT);
+        SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+        return;
+    }
+
+    int paramIndex = 1;
+    debugLog << L"[DEBUG] Binding SQL parameters:";
+
+
+    // Bind last_ping
+    if (lastPingDateTimeStr.size() != 0) {
+        SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, lastPingDateTimeStr.size(), 0,
+            (SQLWCHAR*)lastPingDateTimeStr.c_str(), 0, nullptr);
+        debugLog << L"\n[" << paramIndex - 1 << L"] last_ping = " << lastPingDateTimeStr;
+    }
+    
+    // If filesCount > 1 → insert last_recon
+    if (filesCount > 1) {
+        SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, lastReconDateTimeStr.size(), 0,
+            (SQLWCHAR*)lastReconDateTimeStr.c_str(), 0, nullptr);
+        debugLog << L"\n[" << paramIndex - 1 << L"] last_recon = " << lastReconDateTimeStr;
+    }
+
+    // If filesCount == 1 → insert last_daily
+    if (filesCount == 1) {
+        SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, lastDailyDateTimeStr.size(), 0,
+            (SQLWCHAR*)lastDailyDateTimeStr.c_str(), 0, nullptr);
+        debugLog << L"\n[" << paramIndex - 1 << L"] last_daily = " << lastDailyDateTimeStr;
+    }
+    
+    // Bind recon_id
+    SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0,
+        &idFromStruct, 0, nullptr);
+    debugLog << L"\n[" << paramIndex - 1 << L"] idFromStruct = " << idFromStruct;
+    logIntegrationError(debugLog.str());
+    ret = SQLExecute(hstmt);
+    if (!SQL_SUCCEEDED(ret)) {
+        logSQLError("Failed to execute insert/update logs", hstmt, SQL_HANDLE_STMT);
+    }
+
+    SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+}
+
+
 // Integration of information into the database
-void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::atomic_bool& mailingIsActive) {
+void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::atomic_bool& mailingIsActive, std::atomic_bool& dbIsFull) {
     try {
         logIntegrationError(L"[Integration] file integration was started");
         // Control DB connection
@@ -668,6 +900,7 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
             }
         }
 
+
         // Insert into dbo.data
         if (data_id == -1) {
             data_id = insertIntoDataTable(dbc, fileInfo, struct_id);
@@ -700,6 +933,11 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
                     logEmailError(L"[Mail] Config JSON is empty. Skipping email sending.");
                 }
             }
+        }
+
+        // Insert into dbo.logs
+        if (struct_id != -1 && data_id != -1 && dbIsFull) {
+            insertIntoLogsTable(dbc, fileInfo, struct_id);
         }
 
         // Insert Into dbo.data_process (connected with data)

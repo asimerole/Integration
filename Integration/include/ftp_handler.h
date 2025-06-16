@@ -26,6 +26,7 @@ struct ServerInfo {
     std::wstring localFolderPath;    // Folder on the PC     (TO)
     int status = 0;
     int reconId = 0;
+    std::time_t lastPingTime;
 };
 
 class Ftp {
