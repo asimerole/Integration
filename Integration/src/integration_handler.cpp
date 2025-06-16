@@ -143,7 +143,7 @@ std::wstring Integration::extractValueWithRegex(const std::wstring& content, con
 }
 
 // Collecting file paths
-void Integration::collectRootPaths(std::unordered_set<std::wstring>& parentFolders, const std::wstring rootFolder) {
+void Integration::collectRootPaths(std::set<std::wstring>& parentFolders, const std::wstring rootFolder) {
     try {
         std::wstring fullPath;
         std::wstring currentDir;
