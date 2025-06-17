@@ -32,41 +32,41 @@ public:
 	~Database();
 
 	// Methods for work with Database
-	// Подключение к базе
+	// Connecting to Database
 	bool connectToDatabase();											
 
-	// Выполнение SQL запроса 
+	// Executing SQL query
 	static bool executeSQL(SQLHDBC dbc, const std::wstringstream& sql);	
 
-	// Вставка бинарного файла
+	// Inserting a binary file
 	static bool insertBinaryFileToDatabase(SQLHDBC dbc, const std::string& filePath, int structId);
 
-	// Вставка данных с возвратом его айди 
+	// Inserting data with return of its ID
 	static int executeSQLAndGetIntResult(SQLHDBC dbc, const std::wstringstream& query);
 
-	// Получение корнево папки
+	// Getting the root folder
 	static std::wstring getRootFolder(SQLHDBC dbc);
 
-	// Получение дескриптора соединения 
+	// Getting a connection handle
 	SQLHDBC getConnectionHandle() const;
 
-	// Получение времени на запросы по фтп 
+	// Getting time for FTP requests
 	static int getCycleTimeFromDB(SQLHDBC dbc);
 
-	// Получение строки конфига в Json формате 
+	// Getting config string in Json format
 	static std::wstring getJsonConfigFromDatabase(std::string name, SQLHDBC dbc);
 
-	// Проверка подключения к базе 
+	// Checking if the database is connected
 	bool isConnected();
 
-	// Отключение базы
+	// Disconnecting from Database
 	void disconnectFromDatabase();
 
 private:
 	SQLHENV env = SQL_NULL_HENV;
 	SQLHDBC dbc = SQL_NULL_HDBC;
 
-	// Поиск конфиг файла в каталоге програмы
+	// Finding the configuration file
 	std::string findConfigFile();
 };
 

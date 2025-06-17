@@ -15,18 +15,18 @@ namespace fs = boost::filesystem;
 
 Database::Database(){}
 
-// Метод поиска конфиг файла
+// Method of searching for config file
 std::string Database::findConfigFile() {
-    // Перебираем файлы в текущем каталоге
+    // We go through the files in the current directory
     for (const auto& entry : fs::directory_iterator(fs::current_path())) {
         if (entry.is_regular_file() && entry.path().extension() == ".conf") {
-            return entry.path().string();  // Возвращаем первый попавшийся файл
+            return entry.path().string();  // We return the first file we come across
         }
     }
     throw std::runtime_error("No .conf file found in the current directory");
 }
 
-// Получение корневой папки из базы
+// Getting the root folder from the database
 std::wstring Database::getRootFolder(SQLHDBC dbc) {
     std::wstringstream queryStream;
     queryStream << L"SELECT [value] FROM [ReconDB].[dbo].[access_settings] WHERE [name] = 'root_directory'";
@@ -50,7 +50,7 @@ std::wstring Database::getRootFolder(SQLHDBC dbc) {
     if (SQLFetch(stmt) == SQL_SUCCESS) {
         SQLWCHAR result[256]{};
         SQLLEN indicator;
-        // Получаем данные из первой колонки
+        // We get data from the first column
         SQLGetData(stmt, 1, SQL_C_WCHAR, result, sizeof(result), &indicator);
         if (indicator != SQL_NULL_DATA) {
             rootFolder = result;
@@ -66,7 +66,7 @@ SQLHDBC Database::getConnectionHandle() const{
     return dbc;
 }
 
-// Метод для получения времени цикла из базы данных
+// Method to get cycle time from database
 int Database::getCycleTimeFromDB(SQLHDBC dbc)
 {
     std::wstringstream queryStream;
@@ -100,7 +100,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
         return {};
     }
 
-    // Привязка параметра для подстановки значения переменной `name`
+    // Binding a parameter to substitute the value of the `name` variable
     wchar_t wName[256];
     size_t convertedChars = 0;
     mbstowcs_s(&convertedChars, wName, name.c_str(), _TRUNCATE);
@@ -113,7 +113,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
         return {};
     }
 
-    // Выполнение запроса
+    // Executing a request
     ret = SQLExecute(hstmt);
     if (!SQL_SUCCEEDED(ret)) {
         logError(L"Failed to execute SQL statement");
@@ -121,7 +121,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
         return {};
     }
 
-    wchar_t valueBuffer[1024]{}; // Используем wchar_t для хранения Unicode данных
+    wchar_t valueBuffer[1024]{}; // Using wchar_t to store Unicode data
     SQLLEN indicator = 0;
 
     ret = SQLBindCol(hstmt, 1, SQL_C_WCHAR, valueBuffer, sizeof(valueBuffer), &indicator);
@@ -134,7 +134,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
     std::wstring result;
     if (SQLFetch(hstmt) == SQL_SUCCESS) {
         if (indicator != SQL_NULL_DATA) {
-            result = valueBuffer; // Прямое присваивание строки
+            result = valueBuffer; // Direct string assignment
         }
     }
 
@@ -151,10 +151,10 @@ bool Database::isConnected()
     return dbc != nullptr;
 }
 
-// Метод подключения к БД
+// Method of connection to the database
 bool Database::connectToDatabase() {
     try {
-        // Найти конфигурационный файл
+        // Find configuration file
         std::string configFilePath = findConfigFile();
         std::string server, database, username, password;
         readConfigFile(configFilePath, server, database, username, password);
@@ -167,7 +167,7 @@ bool Database::connectToDatabase() {
             return false;
         }
 
-        // Инициализация ODBC окружения
+        // Initializing the ODBC environment
         SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
         if (!SQL_SUCCEEDED(ret)) {
             return false;
@@ -210,7 +210,7 @@ bool Database::connectToDatabase() {
             return false;
         }
 
-        return true; // Успешное подключение
+        return true; // Successful connection
     }
     catch (const std::exception& e) {
         logError(stringToWString("Exception caught in connectToDatabase: ") + stringToWString(e.what()));
@@ -228,7 +228,7 @@ bool Database::connectToDatabase() {
     }
 }
 
-// Метод выполнения запроса в БД
+// Method for executing a query in a database
 bool Database::executeSQL(SQLHDBC dbc, const std::wstringstream& sql) {
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     bool success = false;
@@ -281,7 +281,7 @@ bool Database::insertBinaryFileToDatabase(SQLHDBC dbc, const std::string& filePa
     return false;
 }
 
-// Метод получения интового результата
+// Method of obtaining an integral result
 int Database::executeSQLAndGetIntResult(SQLHDBC dbc, const std::wstringstream& query) {
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
@@ -299,9 +299,9 @@ int Database::executeSQLAndGetIntResult(SQLHDBC dbc, const std::wstringstream& q
     }
 
     int result = -1;
-    // Получение данных после выполнения запроса
+    // Getting data after executing a query
     if (SQLFetch(stmt) == SQL_SUCCESS) {
-        // Чтение первого значения, которое мы ожидаем - это id вставленной записи
+        // Reading the first value we expect is the id of the inserted record
         SQLGetData(stmt, 1, SQL_C_SLONG, &result, sizeof(result), NULL);
     }
 
@@ -310,7 +310,7 @@ int Database::executeSQLAndGetIntResult(SQLHDBC dbc, const std::wstringstream& q
     return result;
 }
 
-// Метод отключения от БД
+// Method of disconnecting from the database
 void Database::disconnectFromDatabase() {
     try {
         if (dbc != SQL_NULL_HDBC) {

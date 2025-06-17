@@ -10,15 +10,16 @@
 #define SQLTEXT(str) str
 #endif
 
-const size_t MAX_LOG_SIZE = 150 * 1024;  // Максимальный размер в байтах (150 KB)
-const size_t MAX_LOG_LINES = 500;       // Максимальное количество строк в логе
+const size_t MAX_LOG_SIZE = 150 * 1024;  // Maximum size in bytes (150 KB)
+const size_t MAX_LOG_LINES = 500;       // Maximum number of lines in the log
 
+namespace fs = boost::filesystem;
 
-// Размер ключа и IV
-constexpr int KEY_SIZE = 32; // 256-битный ключ
-constexpr int IV_SIZE = 16;  // 128-битный IV
+// Key size and IV
+constexpr int KEY_SIZE = 32; // 256-bit key
+constexpr int IV_SIZE = 16;  // 128-bit IV
 
-// Фиксированные значения ключа и IV (например, генерировать их вручную и хранить)
+// Fixed key and IV values ​​(eg generate them manually and store them)
 unsigned char key[KEY_SIZE] = {
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
     0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
@@ -35,19 +36,19 @@ void trimLogFile(const std::string& filePath) {
     std::ifstream file(filePath);
     if (!file.is_open()) return;
 
-    std::deque<std::string> lines;  // Используем deque для экономии памяти
+    std::deque<std::string> lines;  // Using deque to save memory
     std::string line;
 
-    // Читаем строки и храним только последние MAX_LOG_LINES
+    // Read lines and store only the last MAX_LOG_LINES
     while (std::getline(file, line)) {
         if (lines.size() >= MAX_LOG_LINES) {
-            lines.pop_front();  // Удаляем старую строку, чтобы не переполнять память
+            lines.pop_front();  // We delete the old line to avoid memory overflow
         }
         lines.push_back(line);
     }
-    file.close();  // Закрываем перед открытием на запись
+    file.close();  // Close before opening for recording
 
-    // Перезаписываем файл только если он действительно стал больше лимита
+    // We only overwrite the file if it actually becomes larger than the limit.
     if (lines.size() == MAX_LOG_LINES) {
         std::ofstream outFile(filePath, std::ios::trunc);
         if (!outFile.is_open()) return;
@@ -58,26 +59,50 @@ void trimLogFile(const std::string& filePath) {
     }
 }
 
-void logToFile(const std::wstring& message, const std::string& filePath) {
-    // Проверяем размер файла
-    std::ifstream file(filePath, std::ios::ate | std::ios::binary);
-    std::streampos fileSize = file.tellg();
-    if (fileSize != -1 && static_cast<size_t>(fileSize) > MAX_LOG_SIZE) {
-        file.close();
-        trimLogFile(filePath);
+void logToFile(const std::wstring& message, const std::string& filePathUtf8) {
+    if (filePathUtf8.empty()) return;
+
+    std::wstring widePath = stringToWString(filePathUtf8);
+
+    try {
+        std::ifstream file(widePath, std::ios::ate | std::ios::binary);
+        if (file.is_open() && file.good()) {
+            std::uintmax_t fileSize = fs::file_size(widePath);
+            if (fileSize != -1 && static_cast<size_t>(fileSize) > MAX_LOG_SIZE) {
+                file.close();
+                trimLogFile(filePathUtf8); 
+            }
+        }
+    }
+    catch (...) {
+        return;
     }
 
-    std::wofstream logFile(filePath, std::ios::app);
+    std::wofstream logFile(widePath, std::ios::app);
     if (!logFile.is_open()) return;
 
-    auto now = std::chrono::system_clock::now();
-    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    try {
+        auto now = std::chrono::system_clock::now();
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()) % 1000;
 
-    logFile << std::put_time(std::localtime(&now_time), L"%Y-%m-%d %H:%M:%S")
-        << L" - " << message << std::endl;
+        std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+        std::tm local_tm{};
+        localtime_s(&local_tm, &now_time);
+
+        std::wstringstream timeStream;
+        timeStream << std::put_time(&local_tm, L"%Y-%m-%d %H:%M:%S")
+            << L"." << std::setw(3) << std::setfill(L'0') << millis.count();
+
+        logFile << timeStream.str() << L" - " << message << std::endl;
+    }
+    catch (...) {
+        return;
+    }
 
     logFile.close();
 }
+
 
 void logError(const std::wstring& message) {
     logToFile(message, LOG_FILE);
@@ -97,6 +122,11 @@ void logEmailError(const std::wstring& message) {
 
 void logOneDriveError(const std::wstring& message) {
     logToFile(message, ONEDRIVE_LOG_FILE);
+}
+
+void logExceptions(const std::wstring& message)
+{
+    logToFile(message, EXCEPTION_LOG_PATH);
 }
 
 std::wstring utf8_to_wstring(const std::string& str) {
@@ -164,31 +194,31 @@ std::string base64Encode(const std::string& input)
     BIO* mem = BIO_new(BIO_s_mem());
     bio = BIO_push(bio, mem);
 
-    // Установить флаг для отключения переноса строк
+    // Set flag to disable line wrapping
     BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
 
-    // Записать данные
+    // Write data
     BIO_write(bio, input.data(), static_cast<int>(input.size()));
     BIO_flush(bio);
 
-    // Получить закодированные данные
+    // Get encrypted data
     BUF_MEM* bufferPtr;
     BIO_get_mem_ptr(bio, &bufferPtr);
     std::string encodedData(bufferPtr->data, bufferPtr->length);
 
-    // Освободить ресурсы
+    // Free up resources
     BIO_free_all(bio);
 
     return encodedData;
 }
 
-// Чтобы избежать проблем с одинарными кавычками в SQL-запросе
+// To avoid problems with single quotes in SQL query
 std::wstring escapeSingleQuotes(const std::wstring& input) {
     std::wstring result;
     result.reserve(input.size());
     for (wchar_t ch : input) {
         if (ch == L'\'') {
-            result += L"''"; // Замена одинарных кавычек на двойные
+            result += L"''"; 
         }
         else {
             result += ch;
@@ -203,7 +233,7 @@ bool showConfirmationDialog(const std::wstring& message, const std::wstring& tit
     return (result == IDYES);
 }
 
-// Расшифровка данных из конфиг файла
+// Decrypting data from config file
 std::vector<std::uint8_t> decryptData(const std::string& configPath, const unsigned char* key, const unsigned char* iv)
 {
     std::ifstream configFile(configPath);
@@ -264,9 +294,9 @@ bool readConfigFile(std::string& configPath, std::string& serverName, std::strin
         return false; 
     }
 
-    // Преобразуем расшифрованные данные в строку
+    // Convert the decrypted data into a string
     std::string decryptedString(decryptedData.begin(), decryptedData.end());
-    // Разбираем конфигурацию построчно
+    // Let's analyze the configuration line by line
     std::istringstream in(decryptedString);
     std::string line;
     while (std::getline(in, line)) {
