@@ -23,7 +23,7 @@ public:
     static bool runExternalProgramWithFlag(const std::wstring& programPath, const std::wstring& inputFilePath);
 
     // Collect paths to files 
-    static void collectRootPaths(std::set<std::wstring>& parentFolders, const std::wstring rootFolder);
+    static void collectRootPaths(std::unordered_set<std::wstring>& parentFolders, const std::wstring rootFolder);
 
     // General integration method
     static void fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::atomic_bool& mailingIsActive, std::atomic_bool& dbIsFull);
@@ -84,7 +84,7 @@ private:
     static void insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int struct_id);
 
     // Storing file paths
-    std::set<std::wstring> parentFolders;
+    std::unordered_set<std::wstring> parentFolders;
      
     // Storing last server pings for Logs table 
     static std::map<int, std::time_t> serverPings;

@@ -51,7 +51,7 @@ bool Integration::runExternalProgramWithFlag(const std::wstring& programPath, co
         }
     }
     catch (const std::exception& e) {
-        logIntegrationError(stringToWString("Exception caught in runExternalProgramWithFlag: ") + stringToWString(e.what()));
+        logExceptions(stringToWString("Exception caught in runExternalProgramWithFlag: ") + stringToWString(e.what()));
         return false;
     }
 }
@@ -105,7 +105,7 @@ bool Integration::isSortedFolder(const std::wstring& folderName) {
         }
     }
     catch (const std::exception& e) {
-        logIntegrationError(stringToWString("Exception caught in isSortedFolder: ") + stringToWString(e.what()));
+        logExceptions(stringToWString("Exception caught in isSortedFolder: ") + stringToWString(e.what()));
     }
     return false;
 }
@@ -143,7 +143,7 @@ std::wstring Integration::extractValueWithRegex(const std::wstring& content, con
 }
 
 // Collecting file paths
-void Integration::collectRootPaths(std::set<std::wstring>& parentFolders, const std::wstring rootFolder) {
+void Integration::collectRootPaths(std::unordered_set<std::wstring>& parentFolders, const std::wstring rootFolder) {
     try {
         std::wstring fullPath;
         std::wstring currentDir;
@@ -177,7 +177,7 @@ void Integration::collectRootPaths(std::set<std::wstring>& parentFolders, const 
         }
     }
     catch (const std::exception& e) {
-        logIntegrationError(stringToWString("Exception caught in collectRootPaths: ") + stringToWString(e.what()));
+        logExceptions(stringToWString("Exception caught in collectRootPaths: ") + stringToWString(e.what()));
     }
 }
 
@@ -832,7 +832,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
 // Integration of information into the database
 void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::atomic_bool& mailingIsActive, std::atomic_bool& dbIsFull) {
     try {
-        logIntegrationError(L"[Integration] file integration was started");
+        //logIntegrationError(L"[Integration] file integration was started");
         // Control DB connection
         if (dbc == nullptr) {
             logIntegrationError(L"[Integration]: No connection to the database");
@@ -853,7 +853,7 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
         }
 
         if (!file) {
-            logIntegrationError(L"[Integration::fileIntegrationDB] No valid file found.");
+            //logIntegrationError(L"[Integration::fileIntegrationDB] No valid file found.");
             return;
         }
 
@@ -925,7 +925,7 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
 
                     }
                     catch (const std::exception& e) {
-                        logEmailError(L"[Mail] Failed to parse config JSON or send emails: " + stringToWString(e.what()));
+                        logExceptions(L"[Mail] Failed to parse config JSON or send emails: " + stringToWString(e.what()));
 
                     }
                 }
@@ -954,11 +954,11 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
                     return;
             }
         }
-        logIntegrationError(L"[Integration] file integration was finished");
+        //logIntegrationError(L"[Integration] file integration was finished");
     }
      
     catch (const std::exception& e) {
-        logIntegrationError(stringToWString("Exception caught in fileIntegrationDB: ") + stringToWString(e.what()));
+        logExceptions(stringToWString("Exception caught in fileIntegrationDB: ") + stringToWString(e.what()));
     }
 }
 
@@ -977,7 +977,7 @@ std::wstring Integration::join(const std::vector<std::wstring>& parts, const std
 // Method for collecting information about files
 void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, SQLHDBC dbc) {
     try {
-        logIntegrationError(L"[Integration] collect info was started");
+        //logIntegrationError(L"[Integration] collect info was started");
         std::wstring fileName = entry.path().filename().wstring();              // Name of file ex. (RECON167.759)
         if (!isFileNameValid(fileName)) { return; }                             // Checking file name for validity
         std::wstring baseName = fileName.substr(5);                             // Recon number and file number ex. (167.759)     
@@ -1076,19 +1076,19 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
             fileInfo.files.push_back(baseFile);
         }
         else { return; }
-        logIntegrationError(L"[Integration] collect info was finished");
+        //logIntegrationError(L"[Integration] collect info was finished");
     }
     catch (const std::exception& e) {
-        logIntegrationError(stringToWString("Exception caught in collectFiles: ") + stringToWString(e.what()));
+        logExceptions(stringToWString("Exception caught in collectFiles: ") + stringToWString(e.what()));
     }
     catch (...) {
-        logIntegrationError(L"[FTP] Unknown fatal error during collectFiles.");
+        logExceptions(L"[FTP] Unknown fatal error during collectFiles.");
     }
 }
 
 // Method of sorting files into folders by date
 void Integration::sortFiles(const FileInfo& fileInfo) {
-    logIntegrationError(L"[Integration] Sort Files was started");
+    //logIntegrationError(L"[Integration] Sort Files was started");
     try {
         std::shared_ptr<ExpressFile> expressFile = nullptr;
         std::shared_ptr<DataFile> dataFile = nullptr;
@@ -1112,7 +1112,7 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
         }
 
         if (expressFile) {
-            logIntegrationError(L"[Integration] Processing ExpressFile: " + expressFile->fileName);
+            //logIntegrationError(L"[Integration] Processing ExpressFile: " + expressFile->fileName);
             if (expressFile->date.size() < 6) {
                 logIntegrationError(L"[Integration] ExpressFile date too short: " + expressFile->date);
                 return;
@@ -1131,12 +1131,12 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                     }
                 }
                 catch (const std::exception& e) {
-                    logIntegrationError(L"[Integration] Exception creating folder " + newFolder + L": " + stringToWString(e.what()));
+                    logExceptions(L"[Integration] Exception creating folder " + newFolder + L": " + stringToWString(e.what()));
                     return;
                 }
             }
             else {
-                logIntegrationError(L"[Integration] ExpressFile already in sorted folder, skipping.");
+                //logIntegrationError(L"[Integration] ExpressFile already in sorted folder, skipping.");
                 return;
             }
 
@@ -1148,21 +1148,21 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                 try {
                     if (fs::exists(expressPath)) {
                         if (fs::exists(newExpressPath)) {
-                            logIntegrationError(L"[Integration] Removing duplicate express file: " + expressPath);
+                            //logIntegrationError(L"[Integration] Removing duplicate express file: " + expressPath);
                             fs::remove(expressPath);
                         }
                         else {
-                            logIntegrationError(L"[Integration] Moving express file from " + expressPath + L" to " + newExpressPath);
+                            //logIntegrationError(L"[Integration] Moving express file from " + expressPath + L" to " + newExpressPath);
                             fs::copy(expressPath, newExpressPath, fs::copy_options::overwrite_existing);
                             fs::remove(expressPath);
                         }
                     }
                     else {
-                        logIntegrationError(L"[Integration] Express file not found: " + expressPath);
+                        //logIntegrationError(L"[Integration] Express file not found: " + expressPath);
                     }
                 }
                 catch (const std::exception& e) {
-                    logIntegrationError(L"[Integration] Exception moving express file: " + stringToWString(e.what()));
+                    logExceptions(L"[Integration] Exception moving express file: " + stringToWString(e.what()));
                     return;
                 }
             }
@@ -1175,28 +1175,28 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                 try {
                     if (fs::exists(dataPath)) {
                         if (fs::exists(newDataPath)) {
-                            logIntegrationError(L"[Integration] Removing duplicate data file: " + dataPath);
+                            //logIntegrationError(L"[Integration] Removing duplicate data file: " + dataPath);
                             fs::remove(dataPath);
                         }
                         else {
-                            logIntegrationError(L"[Integration] Moving data file from " + dataPath + L" to " + newDataPath);
+                            //logIntegrationError(L"[Integration] Moving data file from " + dataPath + L" to " + newDataPath);
                             fs::copy(dataPath, newDataPath, fs::copy_options::overwrite_existing);
                             fs::remove(dataPath);
                         }
                     }
                     else {
-                        logIntegrationError(L"[Integration] Data file not found: " + dataPath);
+                        //logIntegrationError(L"[Integration] Data file not found: " + dataPath);
                         return;
                     }
                 }
                 catch (const std::exception& e) {
-                    logIntegrationError(L"[Integration] Exception moving data file: " + stringToWString(e.what()));
+                    logExceptions(L"[Integration] Exception moving data file: " + stringToWString(e.what()));
                     return;
                 }
             }
         }
         else if (baseFile && baseFile->date.size() >= 6) {
-            logIntegrationError(L"[Integration] Processing BaseFile: " + baseFile->fileName);
+            //logIntegrationError(L"[Integration] Processing BaseFile: " + baseFile->fileName);
             std::wstring year = baseFile->date.substr(6, 4);
             std::wstring month = baseFile->date.substr(3, 2);
             std::wstring newFolder = baseFile->parentFolderPath;
@@ -1210,12 +1210,12 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                     }
                 }
                 catch (const std::exception& e) {
-                    logIntegrationError(L"[Integration] Exception creating folder " + newFolder + L": " + stringToWString(e.what()));
+                    logExceptions(L"[Integration] Exception creating folder " + newFolder + L": " + stringToWString(e.what()));
                     return;
                 }
             }
             else {
-                logIntegrationError(L"[Integration] BaseFile already in sorted folder, skipping.");
+                //logIntegrationError(L"[Integration] BaseFile already in sorted folder, skipping.");
                 return;
             }
 
@@ -1240,7 +1240,7 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                 }
             }
             catch (const std::exception& e) {
-                logIntegrationError(L"[Integration] Exception moving base file: " + stringToWString(e.what()));
+                logExceptions(L"[Integration] Exception moving base file: " + stringToWString(e.what()));
                 return;
             }
         }
@@ -1248,10 +1248,10 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
             logIntegrationError(L"[Integration] No suitable file for sorting found.");
         }
 
-        logIntegrationError(L"[Integration] Sort Files was finished successfully");
+        //logIntegrationError(L"[Integration] Sort Files was finished successfully");
     }
     catch (const std::exception& e) {
-        logIntegrationError(L"[Integration] Fatal exception in sortFiles: " + stringToWString(e.what()));
+        logExceptions(L"[Integration] Fatal exception in sortFiles: " + stringToWString(e.what()));
     }
 }
 

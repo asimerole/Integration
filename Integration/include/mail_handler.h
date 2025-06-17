@@ -7,7 +7,7 @@
 #include "integration_handler.h"
 
 
-// Структура для параметров почтового сервера
+// Structure for mail server parameters
 struct MailServerConfig {
     std::wstring smtp_server;
     bool auth_required;
@@ -20,13 +20,13 @@ struct MailServerConfig {
     bool use_ssl;
 };
 
-// Парсинг json строки конфига из базы
+// Parsing json string config from database
 MailServerConfig parseMailServerConfig(const std::string& jsonString);              
 
-// Получение пользователей из базы
+// Getting users from the database
 std::map<std::string, std::vector<std::string>> loadUsersFromDatabase(SQLHDBC dbc); 
 
-// Отправка почты 
+// Sending mail
 bool sendEmails(const MailServerConfig& config, const std::map<std::string,         
     std::vector<std::string>>& users, const FileInfo& fileInfo);
 

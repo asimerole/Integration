@@ -2,22 +2,36 @@
 
 
 std::string BaseFile::readFileContent() {
+    if (fullPath.empty()) {
+        return "";
+    }
     std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
+    if (!file.is_open()) {  
         return "";
     }
-
-    std::streamsize size = file.tellg();
-    binaryDataSize = size;
-
-    file.seekg(0, std::ios::beg);       
-
-    std::string buffer(size, '\0');
-    if (!file.read(&buffer[0], size)) {
+    if (file.fail()) {
         return "";
     }
+    try {
+        std::uintmax_t size = fs::file_size(fullPath);
+        if (size <= 0 || size == std::streamsize(-1)) {
+            logError(L"Incorrect size in readFileContent");
+            return "";
+        }
 
-    return buffer;
+        binaryDataSize = size;
+        file.seekg(0, std::ios::beg);       
+
+        std::string buffer(size, '\0');
+        if (!file.read(&buffer[0], size)) {
+            return "";
+        }
+
+        return buffer;
+    }
+    catch (...) {
+        return "";
+    }
 }
 
 
