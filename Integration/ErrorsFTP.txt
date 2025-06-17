@@ -1,6 +1,0 @@
-2025-06-17 18:22:38.970 - [FTP] Connection failed for 192.168.56.1/R264/
-2025-06-17 18:22:38.979 - [FTP] Connection failed for 192.168.56.1/R642/
-2025-06-17 19:03:10.906 - [FTP] Error: Timeout was reached
-2025-06-17 19:05:32.729 - [FTP] Error: Timeout was reached
-2025-06-17 19:15:33.910 - [FTP] Error: Timeout was reached
-2025-06-17 20:19:56.654 - [FTP] Error: Timeout was reached
