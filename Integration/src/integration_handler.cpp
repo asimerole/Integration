@@ -51,20 +51,19 @@ bool Integration::runExternalProgramWithFlag(const std::wstring& programPath, co
         }
     }
     catch (const std::exception& e) {
-        logExceptions(stringToWString("Exception caught in runExternalProgramWithFlag: ") + stringToWString(e.what()));
+        logError(stringToWString("Exception caught in runExternalProgramWithFlag: ") + stringToWString(e.what()), EXCEPTION_LOG_PATH);
         return false;
     }
 }
 
-bool Integration::isFileNameValid(const std::wstring& fileName)
-{
-    std::vector<std::wstring> validPrefixes = {
-    L"RNET", L"RPUSK", L"DAILY", L"DIAGN", L"RECON", L"REXPR"
+bool Integration::isFileNameValid(const std::wstring& fileName) {
+    static const std::vector<std::wstring> validPrefixes = {
+        L"RNET", L"RPUSK", L"DAILY", L"DIAGN", L"RECON", L"REXPR"
     };
 
     return std::any_of(validPrefixes.begin(), validPrefixes.end(),
         [&](const std::wstring& prefix) {
-            return fileName.rfind(prefix, 0) == 0;
+            return boost::algorithm::istarts_with(fileName, prefix);
         });
 }
 
@@ -105,7 +104,7 @@ bool Integration::isSortedFolder(const std::wstring& folderName) {
         }
     }
     catch (const std::exception& e) {
-        logExceptions(stringToWString("Exception caught in isSortedFolder: ") + stringToWString(e.what()));
+        logError(stringToWString("Exception caught in isSortedFolder: ") + stringToWString(e.what()), EXCEPTION_LOG_PATH);
     }
     return false;
 }
@@ -149,7 +148,7 @@ void Integration::collectRootPaths(std::unordered_set<std::wstring>& parentFolde
         std::wstring currentDir;
 
         if (!fs::exists(rootFolder) || !fs::is_directory(rootFolder)) {
-            logIntegrationError(stringToWString("The folder does not exist or is inaccessible: ") + stringToWString(converter.to_bytes(rootFolder)));
+            logError(stringToWString("The folder does not exist or is inaccessible: ") + stringToWString(converter.to_bytes(rootFolder)), INTEGRATION_LOG_PATH);
             return;
         }
 
@@ -177,7 +176,7 @@ void Integration::collectRootPaths(std::unordered_set<std::wstring>& parentFolde
         }
     }
     catch (const std::exception& e) {
-        logExceptions(stringToWString("Exception caught in collectRootPaths: ") + stringToWString(e.what()));
+        logError(stringToWString("Exception caught in collectRootPaths: ") + stringToWString(e.what()), EXCEPTION_LOG_PATH);
     }
 }
 
@@ -185,7 +184,7 @@ std::tuple<int, int, int, int> Integration::getRecordIDs(SQLHDBC dbc, std::share
     SQLHSTMT hstmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logIntegrationError(L"Failed to allocate SQL statement handle");
+        logError(L"Failed to allocate SQL statement handle", INTEGRATION_LOG_PATH);
         return { -1, -1, -1, -1 };
     }
 
@@ -281,10 +280,10 @@ static void logSQLError(const std::string& message, SQLHANDLE handle, SQLSMALLIN
             L", Error Message: " + messageText +
             L", NativeError: " + std::to_wstring(nativeError);
         //logError(std::string(errorMessage.begin(), errorMessage.end())); 
-        logIntegrationError(stringToWString(converter.to_bytes(errorMessage)));
+        logError(stringToWString(converter.to_bytes(errorMessage)), INTEGRATION_LOG_PATH);
     }
     else {
-        logIntegrationError(stringToWString(message) + L" - No additional diagnostic information available.");
+        logError(stringToWString(message) + L" - No additional diagnostic information available.", INTEGRATION_LOG_PATH);
     }
 }
 
@@ -293,7 +292,7 @@ int Integration::insertIntoUnitTable(SQLHDBC dbc, const std::shared_ptr<BaseFile
     SQLHSTMT hstmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logIntegrationError(stringToWString("Failed to allocate SQL statement handle: insertInUnitTable"));
+        logError(stringToWString("Failed to allocate SQL statement handle: insertInUnitTable"), INTEGRATION_LOG_PATH);
         return -1;
     }
 
@@ -335,7 +334,7 @@ int Integration::insertIntoStructTable(SQLHDBC dbc, const std::shared_ptr<BaseFi
     SQLHSTMT hstmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logIntegrationError(L"Failed to allocate SQL statement handle: insertIntoStructTable");
+        logError(L"Failed to allocate SQL statement handle: insertIntoStructTable", INTEGRATION_LOG_PATH);
         return -1;
     }
 
@@ -386,9 +385,12 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int 
     case 1:
         if (typeid(*fileInfo.files[0]) == typeid(BaseFile)) {
             baseFile = std::dynamic_pointer_cast<BaseFile>(fileInfo.files[0]);
-        }
+		}
+		else if (typeid(*fileInfo.files[0]) == typeid(ExpressFile)) {
+			expressFile = std::dynamic_pointer_cast<ExpressFile>(fileInfo.files[0]);
+		}
         else {
-            logIntegrationError(L"[Integration] Expected only BaseFile, got derived type.");
+            logError(L"[Integration] Expected only BaseFile, got derived type.", INTEGRATION_LOG_PATH);
         }
         break;
 
@@ -401,13 +403,13 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int 
                 dataFile = df;
             }
             else {
-                logIntegrationError(L"[Integration] Unknown file type in fileInfo.files.");
+                logError(L"[Integration] Unknown file type in fileInfo.files.", INTEGRATION_LOG_PATH);
             }
         }
         break;
 
     default:
-        logIntegrationError(L"[Integration] Unexpected number of files. Expected 1 or 2.");
+        logError(L"[Integration] Unexpected number of files. Expected 1 or 2.", INTEGRATION_LOG_PATH);
         break;
     }
 
@@ -415,7 +417,7 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int 
     // Determine which file to use for general parameters
     std::shared_ptr<BaseFile> file = expressFile ? expressFile : baseFile;
     if (!file) {
-        logIntegrationError(L"[Integration] No valid file found for binding common parameters.");
+        //logError(L"[Integration] No valid file found for binding common parameters.", INTEGRATION_LOG_PATH);
         return -1;
     }
 
@@ -423,10 +425,14 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int 
     std::wstring formattedDate = file->date.substr(6, 4) + L"-" + file->date.substr(3, 2) + L"-" + file->date.substr(0, 2);
     std::wstring formattedTime = file->time;
 
+    if (file->binaryData.empty()) {
+		return -1; // No binary data to insert
+    }
+
     SQLHSTMT hstmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logIntegrationError(L"Failed to allocate SQL statement handle: insertIntoDataTable");
+        logError(L"Failed to allocate SQL statement handle: insertIntoDataTable", INTEGRATION_LOG_PATH);
         return -1;
     }
 
@@ -445,24 +451,29 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int 
 
     // собираем данные
     if (dataFile && dataFile->hasDataFile) {
-        sqlQuery += L", [data_file]";
-        values += L", ?";
-        filePointers.push_back((void*)dataFile->binaryData.c_str());
-        fileSizes.push_back(static_cast<SQLLEN>(dataFile->binaryDataSize));
+        if (!dataFile->binaryData.empty()) {
+            sqlQuery += L", [data_file]";
+            values += L", ?";
+            filePointers.push_back((void*)dataFile->binaryData.data());
+            fileSizes.push_back(static_cast<SQLLEN>(dataFile->binaryData.size()));
+        }
     }
     if (expressFile && expressFile->hasExpressFile) {
-        sqlQuery += L", [express_file]";
-        values += L", ?";
-        filePointers.push_back((void*)expressFile->binaryData.c_str());
-        fileSizes.push_back(static_cast<SQLLEN>(expressFile->binaryDataSize));
+        if (!expressFile->binaryData.empty()) {        
+            sqlQuery += L", [express_file]";
+            values += L", ?";
+            filePointers.push_back((void*)expressFile->binaryData.data());
+            fileSizes.push_back(static_cast<SQLLEN>(expressFile->binaryData.size()));
+        }
     }
     if (baseFile && !expressFile && !dataFile) {
-        sqlQuery += L", [other_type_file], [file_type]";
-        values += L", ?, ?";
-        filePointers.push_back((void*)baseFile->binaryData.c_str());
-        fileSizes.push_back(static_cast<SQLLEN>(baseFile->binaryDataSize));
+        if (!baseFile->binaryData.empty()) {
+            sqlQuery += L", [other_type_file], [file_type]";
+            values += L", ?, ?";
+            filePointers.push_back((void*)baseFile->binaryData.data());
+            fileSizes.push_back(static_cast<SQLLEN>(baseFile->binaryData.size()));
+        }
     }
-
 
     // Completing the SQL query
     sqlQuery += L") " + values + L");";
@@ -498,9 +509,11 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int 
         void* binData = filePointers[i];
         SQLLEN* binSize = &fileSizes[i];  
 
-        ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_BINARY, SQL_LONGVARBINARY,
+		// Bind the binary data
+        ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, 
+            SQL_C_BINARY, SQL_LONGVARBINARY,
             *binSize, 0, binData, *binSize, binSize);
-
+        
         if (!SQL_SUCCEEDED(ret)) {
             logSQLError("Failed to bind binary file", hstmt, SQL_HANDLE_STMT);
         }
@@ -532,14 +545,14 @@ int Integration::insertIntoProcessTable(SQLHDBC dbc, const std::shared_ptr<BaseF
 {
     auto expressFile = std::dynamic_pointer_cast<ExpressFile>(file);
     if (!expressFile) {
-        logIntegrationError(L"[Integration::insertIntoProcessTable] Expected ExpressFile but got something else");
+        logError(L"[Integration::insertIntoProcessTable] Expected ExpressFile but got something else", INTEGRATION_LOG_PATH);
         return -1;
     }
 
     SQLHSTMT hstmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logIntegrationError(L"Failed to allocate SQL statement handle: insertIntoProcessTable");
+        logError(L"Failed to allocate SQL statement handle: insertIntoProcessTable", INTEGRATION_LOG_PATH);
         return -1;
     }
 
@@ -626,7 +639,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
             baseFile = std::dynamic_pointer_cast<BaseFile>(fileInfo.files[0]);
         }
         else {
-            logIntegrationError(L"[Integration] Expected only BaseFile, got derived type.");
+            logError(L"[Integration] Expected only BaseFile, got derived type.", INTEGRATION_LOG_PATH);
             return;
         }
         break;
@@ -640,14 +653,14 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
                 dataFile = df;
             }
             else {
-                logIntegrationError(L"[Integration] Unknown file type in fileInfo.files.");
+                logError(L"[Integration] Unknown file type in fileInfo.files.", INTEGRATION_LOG_PATH);
                 return;
             }
         }
         break;
 
     default:
-        logIntegrationError(L"[Integration] Unexpected number of files. Expected 1 or 2.");
+        logError(L"[Integration] Unexpected number of files. Expected 1 or 2.", INTEGRATION_LOG_PATH);
         return;
     }
 
@@ -677,7 +690,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     SQLHSTMT hstmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logIntegrationError(L"[Integration] Failed to allocate SQL handle");
+        logError(L"[Integration] Failed to allocate SQL handle", INTEGRATION_LOG_PATH);
         return;
     }
 
@@ -779,7 +792,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     debugLog << L"\n[DEBUG] filesCount = " << filesCount << L", count = " << count;
     ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logIntegrationError(L"Failed to allocate handle for insert/update");
+        logError(L"Failed to allocate handle for insert/update", INTEGRATION_LOG_PATH);
         return;
     }
 
@@ -819,7 +832,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0,
         &idFromStruct, 0, nullptr);
     debugLog << L"\n[" << paramIndex - 1 << L"] idFromStruct = " << idFromStruct;
-    logIntegrationError(debugLog.str());
+    logError(debugLog.str(), INTEGRATION_LOG_PATH);
     ret = SQLExecute(hstmt);
     if (!SQL_SUCCEEDED(ret)) {
         logSQLError("Failed to execute insert/update logs", hstmt, SQL_HANDLE_STMT);
@@ -835,7 +848,7 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
         //logIntegrationError(L"[Integration] file integration was started");
         // Control DB connection
         if (dbc == nullptr) {
-            logIntegrationError(L"[Integration]: No connection to the database");
+            logError(L"[Integration]: No connection to the database", INTEGRATION_LOG_PATH);
             return;
         }
         std::shared_ptr<BaseFile> file = nullptr;
@@ -920,17 +933,17 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
                     try {
                         // Parsing JSON
                         auto config = parseMailServerConfig(configJson);
-                        logEmailError(L"[Mail] Config file was received successfully.");
+                        logError(L"[Mail] Config file was received successfully.", EMAIL_LOG_PATH);
                         sendEmails(config, users, fileInfo);
 
                     }
                     catch (const std::exception& e) {
-                        logExceptions(L"[Mail] Failed to parse config JSON or send emails: " + stringToWString(e.what()));
+                        logError(L"[Mail] Failed to parse config JSON or send emails: " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
 
                     }
                 }
                 else {
-                    logEmailError(L"[Mail] Config JSON is empty. Skipping email sending.");
+                    logError(L"[Mail] Config JSON is empty. Skipping email sending.", EMAIL_LOG_PATH);
                 }
             }
         }
@@ -945,7 +958,7 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
             if (dataProcess_id == -1) {
                 auto ef = std::dynamic_pointer_cast<ExpressFile>(file);
                 if (!ef) {
-                    logIntegrationError(L"[insertIntoProcessTable] Invalid cast to ExpressFile");
+                    logError(L"[insertIntoProcessTable] Invalid cast to ExpressFile", INTEGRATION_LOG_PATH);
                     return;
                 }
                 dataProcess_id = insertIntoProcessTable(dbc, ef, data_id);
@@ -958,7 +971,7 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
     }
      
     catch (const std::exception& e) {
-        logExceptions(stringToWString("Exception caught in fileIntegrationDB: ") + stringToWString(e.what()));
+        logError(stringToWString("Exception caught in fileIntegrationDB: ") + stringToWString(e.what()), EXCEPTION_LOG_PATH);
     }
 }
 
@@ -977,8 +990,12 @@ std::wstring Integration::join(const std::vector<std::wstring>& parts, const std
 // Method for collecting information about files
 void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, SQLHDBC dbc) {
     try {
+
         //logIntegrationError(L"[Integration] collect info was started");
         std::wstring fileName = entry.path().filename().wstring();              // Name of file ex. (RECON167.759)
+        //if (fileName == L"RECON761.608" || fileName == L"REXPR761.608") {
+        //    logError(L"", LOG_PATH);
+        //}
         if (!isFileNameValid(fileName)) { return; }                             // Checking file name for validity
         std::wstring baseName = fileName.substr(5);                             // Recon number and file number ex. (167.759)     
         std::wstring pathToFile = entry.path().parent_path().wstring() + L"\\"; // Path to file
@@ -1011,6 +1028,7 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
                 if (!containsLetters) {
                     if (std::regex_match(fileName, pattern))    {
                         if (!runExternalProgramWithFlag(pathToOMPExecutable, fullPath)) {
+                            logError(L"File: " + fileName + L" is broken.", LOG_PATH);
                             return;
                         }
                         return;
@@ -1079,10 +1097,10 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
         //logIntegrationError(L"[Integration] collect info was finished");
     }
     catch (const std::exception& e) {
-        logExceptions(stringToWString("Exception caught in collectFiles: ") + stringToWString(e.what()));
+        logError(stringToWString("Exception caught in collectFiles: ") + stringToWString(e.what()), EXCEPTION_LOG_PATH);
     }
     catch (...) {
-        logExceptions(L"[FTP] Unknown fatal error during collectFiles.");
+        logError(L"[FTP] Unknown fatal error during collectFiles.", EXCEPTION_LOG_PATH);
     }
 }
 
@@ -1107,14 +1125,14 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
         }
 
         if (!expressFile && dataFile) {
-            logIntegrationError(L"[Integration] ExpressFile for " + dataFile->fileName + L" is not found, sorting is not possible.");
+            logError(L"[Integration] ExpressFile for " + dataFile->fileName + L" is not found, sorting is not possible.", INTEGRATION_LOG_PATH);
             return;
         }
 
         if (expressFile) {
             //logIntegrationError(L"[Integration] Processing ExpressFile: " + expressFile->fileName);
             if (expressFile->date.size() < 6) {
-                logIntegrationError(L"[Integration] ExpressFile date too short: " + expressFile->date);
+                logError(L"[Integration] ExpressFile date too short: " + expressFile->date, INTEGRATION_LOG_PATH);
                 return;
             }
 
@@ -1126,12 +1144,12 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                 newFolder = expressFile->parentFolderPath + L"\\" + year + L"_" + month;
                 try {
                     if (!fs::exists(newFolder)) {
-                        logIntegrationError(L"[Integration] Creating new folder: " + newFolder);
+                        logError(L"[Integration] Creating new folder: " + newFolder, INTEGRATION_LOG_PATH);
                         fs::create_directory(newFolder);
                     }
                 }
                 catch (const std::exception& e) {
-                    logExceptions(L"[Integration] Exception creating folder " + newFolder + L": " + stringToWString(e.what()));
+                    logError(L"[Integration] Exception creating folder " + newFolder + L": " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
                     return;
                 }
             }
@@ -1162,7 +1180,7 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                     }
                 }
                 catch (const std::exception& e) {
-                    logExceptions(L"[Integration] Exception moving express file: " + stringToWString(e.what()));
+                    logError(L"[Integration] Exception moving express file: " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
                     return;
                 }
             }
@@ -1190,7 +1208,7 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                     }
                 }
                 catch (const std::exception& e) {
-                    logExceptions(L"[Integration] Exception moving data file: " + stringToWString(e.what()));
+                    logError(L"[Integration] Exception moving data file: " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
                     return;
                 }
             }
@@ -1205,12 +1223,12 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
                 newFolder = baseFile->parentFolderPath + L"\\" + year + L"_" + month;
                 try {
                     if (!fs::exists(newFolder)) {
-                        logIntegrationError(L"[Integration] Creating new folder: " + newFolder);
+                        logError(L"[Integration] Creating new folder: " + newFolder, INTEGRATION_LOG_PATH);
                         fs::create_directory(newFolder);
                     }
                 }
                 catch (const std::exception& e) {
-                    logExceptions(L"[Integration] Exception creating folder " + newFolder + L": " + stringToWString(e.what()));
+                    logError(L"[Integration] Exception creating folder " + newFolder + L": " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
                     return;
                 }
             }
@@ -1225,33 +1243,33 @@ void Integration::sortFiles(const FileInfo& fileInfo) {
             try {
                 if (fs::exists(basePath)) {
                     if (fs::exists(newBasePath)) {
-                        logIntegrationError(L"[Integration] Removing duplicate base file: " + basePath);
+                        logError(L"[Integration] Removing duplicate base file: " + basePath, INTEGRATION_LOG_PATH);
                         fs::remove(basePath);
                     }
                     else {
-                        logIntegrationError(L"[Integration] Moving base file from " + basePath + L" to " + newBasePath);
+                        logError(L"[Integration] Moving base file from " + basePath + L" to " + newBasePath, INTEGRATION_LOG_PATH);
                         fs::copy(basePath, newBasePath, fs::copy_options::overwrite_existing);
                         fs::remove(basePath);
                     }
                 }
                 else {
-                    logIntegrationError(L"[Integration] Base file not found: " + basePath);
+                    logError(L"[Integration] Base file not found: " + basePath, INTEGRATION_LOG_PATH);
                     return;
                 }
             }
             catch (const std::exception& e) {
-                logExceptions(L"[Integration] Exception moving base file: " + stringToWString(e.what()));
+                logError(L"[Integration] Exception moving base file: " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
                 return;
             }
         }
         else {
-            logIntegrationError(L"[Integration] No suitable file for sorting found.");
+            //logError(L"[Integration] No suitable file for sorting found.", INTEGRATION_LOG_PATH);
         }
 
         //logIntegrationError(L"[Integration] Sort Files was finished successfully");
     }
     catch (const std::exception& e) {
-        logExceptions(L"[Integration] Fatal exception in sortFiles: " + stringToWString(e.what()));
+        logError(L"[Integration] Fatal exception in sortFiles: " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
     }
 }
 

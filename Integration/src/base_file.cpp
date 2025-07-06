@@ -15,7 +15,7 @@ std::string BaseFile::readFileContent() {
     try {
         std::uintmax_t size = fs::file_size(fullPath);
         if (size <= 0 || size == std::streamsize(-1)) {
-            logError(L"Incorrect size in readFileContent");
+            //logError(L"Incorrect size in readFileContent" + fullPath, LOG_PATH);
             return "";
         }
 
@@ -74,7 +74,7 @@ void BaseFile::processPath(std::wstring rootFolder)
         reconNum = std::stoi(fileName.substr(5, 3));
     }
     else {
-        logIntegrationError(L"[BaseFile::processPath] fileName.size() <= 8. File name: " + fileName);
+        logError(L"[BaseFile::processPath] fileName.size() <= 8. File name: " + fileName, INTEGRATION_LOG_PATH);
     }
 
     reconNumber = reconNum;
@@ -85,7 +85,7 @@ bool BaseFile::getFileDateAndTime()
     WIN32_FILE_ATTRIBUTE_DATA fileInfo;
 
     if (!GetFileAttributesExW(fullPath.c_str(), GetFileExInfoStandard, &fileInfo)) {
-        logIntegrationError(L"[getFileDateAndTime]: Error opening file");
+        logError(L"[getFileDateAndTime]: Error opening file", INTEGRATION_LOG_PATH);
         return false;
     }
 
@@ -122,8 +122,8 @@ void ExpressFile::readDataFromFile() {
 
 
         std::map<std::wstring, std::wregex> regexMap = {
-            {L"date", std::wregex(L"Дата:\\s*(\\d{2}/\\d{2}/\\d{4})")},
-            {L"time", std::wregex(L"Время\\s+пуска:\\s*(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})")},
+            {L"date", std::wregex(L"Дата\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})")},
+            {L"time", std::wregex(L"Время(?:\\s+пуска)?\\s*:?\\s*(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})")},
             {L"reconObject", std::wregex(L"Объект:\\s*(.*)")},
             {L"factor", std::wregex(L"Фактор пуска:\\s*(.*)")},
             {L"typeKz", std::wregex(L"Повреждение.*:\\s*(.*)")},
@@ -136,7 +136,7 @@ void ExpressFile::readDataFromFile() {
         typeKz = Integration::extractValueWithRegex(wideFileContent, regexMap[L"typeKz"]);
         damagedLine = Integration::extractValueWithRegex(wideFileContent, regexMap[L"damagedLine"]);
 
-        if (date.empty() || time.empty() || factor.empty() || damagedLine.empty()) {
+        if (date.empty() || time.empty() || factor.empty() || typeKz.empty()) {
             if (date.empty()) {
                 date = Integration::extractParamValue(wideFileContent, L"$DP=");
             }
@@ -160,6 +160,6 @@ void ExpressFile::readDataFromFile() {
 
     }
     catch (const std::exception& e) {
-        logIntegrationError(stringToWString("Exception caught in readDataFromFile: ") + fileName + L" " + stringToWString(e.what()));
+        logError(stringToWString("Exception caught in readDataFromFile: ") + fileName + L" " + stringToWString(e.what()), INTEGRATION_LOG_PATH);
     }
 }

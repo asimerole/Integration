@@ -14,6 +14,7 @@
 #include <file_info.h>
 #include <utils.h>
 #include <cwctype>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace fs = boost::filesystem;
 

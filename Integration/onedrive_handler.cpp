@@ -22,7 +22,7 @@ OneDriveConfig parseOneDriveConfig(const std::string& jsonString)
             config.monthCount = configJson["months"].get<int>();
         }
         else {
-            logError(stringToWString("Field 'months' is missing or null."));
+            logError(stringToWString("Field 'months' is missing or null."), ONEDRIVE_LOG_PATH);
         }
 
         // Извлечение необходимости аутентификации
@@ -30,18 +30,18 @@ OneDriveConfig parseOneDriveConfig(const std::string& jsonString)
             config.oneDrivePath = utf8_to_wstring(configJson["path"].get<std::string>());
         }
         else {
-            logError(stringToWString("Field 'path' is missing or null."));
+            logError(stringToWString("Field 'path' is missing or null."), ONEDRIVE_LOG_PATH);
         }
 
         return config;
 
     }
     catch (const json::exception& e) {
-        logError(stringToWString("JSON parsing error: ") + stringToWString(e.what()));
+        logError(stringToWString("JSON parsing error: ") + stringToWString(e.what()), EXCEPTION_LOG_PATH);
         throw; // Пробрасываем исключение дальше
     }
     catch (const std::exception& e) {
-        logError(stringToWString("Unexpected error in parseMailServerConfig: ") + stringToWString(e.what()));
+        logError(stringToWString("Unexpected error in parseMailServerConfig: ") + stringToWString(e.what()), EXCEPTION_LOG_PATH);
         throw;
     }
 }
