@@ -35,13 +35,13 @@ std::wstring Database::getRootFolder(SQLHDBC dbc) {
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"Failed to allocate get root folder SQL statement handle");
+        logError(L"Failed to allocate get root folder SQL statement handle", LOG_PATH);
         return L"";
     }
 
     ret = SQLExecDirect(stmt, (SQLWCHAR*)queryStr.c_str(), SQL_NTS);
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        logError(L"Failed to execute SQL query: " + queryStr);
+        logError(L"Failed to execute SQL query: " + queryStr, LOG_PATH);
         SQLFreeHandle(SQL_HANDLE_STMT, stmt);
         return L"";
     }
@@ -83,7 +83,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &hstmt);
 
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"Failed to allocate SQL statement handle");
+        logError(L"Failed to allocate SQL statement handle", LOG_PATH);
         return {};
     }
 
@@ -95,7 +95,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
 
     ret = SQLPrepareW(hstmt, (SQLWCHAR*)sqlQuery, SQL_NTS);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"Failed to prepare SQL statement");
+        logError(L"Failed to prepare SQL statement", LOG_PATH);
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         return {};
     }
@@ -108,7 +108,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
 
     ret = SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 255, 0, wName, 0, nullptr);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"Failed to bind parameter");
+        logError(L"Failed to bind parameter", LOG_PATH);
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         return {};
     }
@@ -116,7 +116,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
     // Executing a request
     ret = SQLExecute(hstmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"Failed to execute SQL statement");
+        logError(L"Failed to execute SQL statement", LOG_PATH);
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         return {};
     }
@@ -126,7 +126,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
 
     ret = SQLBindCol(hstmt, 1, SQL_C_WCHAR, valueBuffer, sizeof(valueBuffer), &indicator);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"Failed to bind result column");
+        logError(L"Failed to bind result column", LOG_PATH);
         SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
         return {};
     }
@@ -163,7 +163,7 @@ bool Database::connectToDatabase() {
             logError(L"Check for missing params: server:" + stringToWString(server) +
                 L"\ndatabase: " + stringToWString(database) +
                 L"\nusername: " + stringToWString(username) +
-                L"\npassword: " + stringToWString(password));
+                L"\npassword: " + stringToWString(password), LOG_PATH);
             return false;
         }
 
@@ -213,7 +213,7 @@ bool Database::connectToDatabase() {
         return true; // Successful connection
     }
     catch (const std::exception& e) {
-        logError(stringToWString("Exception caught in connectToDatabase: ") + stringToWString(e.what()));
+        logError(stringToWString("Exception caught in connectToDatabase: ") + stringToWString(e.what()), LOG_PATH);
 
         if (dbc) {
             SQLFreeHandle(SQL_HANDLE_DBC, dbc);
@@ -236,7 +236,7 @@ bool Database::executeSQL(SQLHDBC dbc, const std::wstringstream& sql) {
         // Allocating a handle to execute an SQL query
         SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
         if (!SQL_SUCCEEDED(ret)) {
-            logError(L"Failed to allocate SQL statement handle");
+            logError(L"Failed to allocate SQL statement handle", LOG_PATH);
             return false;
         }
         std::wstring queryStr = sql.str();
@@ -246,7 +246,7 @@ bool Database::executeSQL(SQLHDBC dbc, const std::wstringstream& sql) {
         }
         else {
             std::wstring errorMessage = L"Error executing SQL query: " + sql.str();
-            logError(errorMessage);
+            logError(errorMessage, LOG_PATH);
 
             // Retrieve and log the error details
             SQLWCHAR sqlState[1024];
@@ -257,19 +257,19 @@ bool Database::executeSQL(SQLHDBC dbc, const std::wstringstream& sql) {
             SQLSMALLINT recNum = 1;
             while (SQLGetDiagRec(SQL_HANDLE_STMT, stmt, recNum, sqlState, &nativeError, messageText, sizeof(messageText) / sizeof(SQLWCHAR), &textLength) == SQL_SUCCESS) {
                 std::wstring detailedErrorMessage = L"SQL Error [State: " + std::wstring(sqlState) + L"]: " + std::wstring(messageText) + L"\n";
-                logError(detailedErrorMessage);
+                logError(detailedErrorMessage, LOG_PATH);
                 recNum++;
             }
         }
     }
     catch (const std::exception& e) {
-        logError(stringToWString("Exception caught in executeSQL: ") + stringToWString(e.what()));
+        logError(stringToWString("Exception caught in executeSQL: ") + stringToWString(e.what()), LOG_PATH);
     }
     // Freeing a SQL Query Handle
     if (stmt != SQL_NULL_HSTMT) {
         SQLRETURN ret = SQLFreeHandle(SQL_HANDLE_STMT, stmt);
         if (!SQL_SUCCEEDED(ret)) {
-            logError(L"Failed to free SQL statement handle");
+            logError(L"Failed to free SQL statement handle", LOG_PATH);
         }
     }
     return success;
@@ -286,14 +286,14 @@ int Database::executeSQLAndGetIntResult(SQLHDBC dbc, const std::wstringstream& q
     SQLHSTMT stmt = SQL_NULL_HSTMT;
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
     if (!SQL_SUCCEEDED(ret)) {
-        logError(L"Failed to allocate SQL statement handle");
+        logError(L"Failed to allocate SQL statement handle", LOG_PATH);
         return -1;
     }
 
     std::wstring queryStr = query.str();
     ret = SQLExecDirect(stmt, (SQLWCHAR*)queryStr.c_str(), SQL_NTS);
     if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-        logError(L"Failed to execute SQL query: " + queryStr);
+        logError(L"Failed to execute SQL query: " + queryStr, LOG_PATH);
         SQLFreeHandle(SQL_HANDLE_STMT, stmt);
         return -1;
     }
@@ -316,11 +316,11 @@ void Database::disconnectFromDatabase() {
         if (dbc != SQL_NULL_HDBC) {
             SQLRETURN ret = SQLDisconnect(dbc);
             if (!SQL_SUCCEEDED(ret)) {
-                logError(L"Failed to disconnect from database");
+                logError(L"Failed to disconnect from database", LOG_PATH);
             }
             ret = SQLFreeHandle(SQL_HANDLE_DBC, dbc);
             if (!SQL_SUCCEEDED(ret)) {
-                logError(L"Failed to free ODBC connection handle");
+                logError(L"Failed to free ODBC connection handle", LOG_PATH);
             }
             else {
                 dbc = SQL_NULL_HDBC;
@@ -330,7 +330,7 @@ void Database::disconnectFromDatabase() {
         if (env != SQL_NULL_HENV) {
             SQLRETURN ret = SQLFreeHandle(SQL_HANDLE_ENV, env);
             if (!SQL_SUCCEEDED(ret)) {
-                logError(L"Failed to free ODBC environment handle");
+                logError(L"Failed to free ODBC environment handle", LOG_PATH);
             }
             else {
                 env = SQL_NULL_HENV;
@@ -338,7 +338,7 @@ void Database::disconnectFromDatabase() {
         }
     }
     catch (const std::exception& e) {
-        logError(L"Exception caught in disconnectFromDatabase: " + stringToWString(e.what()));
+        logError(L"Exception caught in disconnectFromDatabase: " + stringToWString(e.what()), LOG_PATH);
     }
 }
 

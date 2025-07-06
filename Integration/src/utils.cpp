@@ -59,7 +59,7 @@ void trimLogFile(const std::string& filePath) {
     }
 }
 
-void logToFile(const std::wstring& message, const std::string& filePathUtf8) {
+void logError(const std::wstring& message, const std::string& filePathUtf8) {
     if (filePathUtf8.empty()) return;
 
     std::wstring widePath = stringToWString(filePathUtf8);
@@ -104,31 +104,6 @@ void logToFile(const std::wstring& message, const std::string& filePathUtf8) {
 }
 
 
-void logError(const std::wstring& message) {
-    logToFile(message, LOG_FILE);
-}
-
-void logFtpError(const std::wstring& message) {
-    logToFile(message, FTP_LOG_FILE);
-}
-
-void logIntegrationError(const std::wstring& message) {
-    logToFile(message, INTEGRATION_LOG_FILE);
-}
-
-void logEmailError(const std::wstring& message) {
-    logToFile(message, EMAIL_LOG_FILE);
-}
-
-void logOneDriveError(const std::wstring& message) {
-    logToFile(message, ONEDRIVE_LOG_FILE);
-}
-
-void logExceptions(const std::wstring& message)
-{
-    logToFile(message, EXCEPTION_LOG_PATH);
-}
-
 std::wstring utf8_to_wstring(const std::string& str) {
     std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
     return converter.from_bytes(str);
@@ -144,7 +119,7 @@ std::wstring stringToWString(const std::string& str) {
 
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), NULL, 0);
     if (size_needed <= 0) {
-        logError(L"Error converting string: " + std::to_wstring(GetLastError()));
+        logError(L"Error converting string: " + std::to_wstring(GetLastError()), LOG_PATH);
         return L"";
     }
 
@@ -161,11 +136,11 @@ std::string wstringToString(const std::wstring& wstr)
         return converter.to_bytes(wstr);
     }
     catch (const std::range_error& e) {
-        logError(L"Range error caught in wstringToString: bad conversion" + stringToWString(e.what()));
+        logError(L"Range error caught in wstringToString: bad conversion" + stringToWString(e.what()), LOG_PATH);
         throw;
     }
     catch (const std::exception& e) {
-        logError(L"General exception caught in wstringToString: " + stringToWString(e.what()));
+        logError(L"General exception caught in wstringToString: " + stringToWString(e.what()), LOG_PATH);
         throw;
     }
 }
@@ -338,7 +313,7 @@ bool isWithinLastNDays(const std::wstring& fileDate, int days)
     std::tm fileTm = {};
 
     if (!parseDate(fileDate, fileTm)) {
-        logError(L"Failed to parse file date: " + fileDate);
+        logError(L"Failed to parse file date: " + fileDate, LOG_PATH);
         return false; 
     }
 

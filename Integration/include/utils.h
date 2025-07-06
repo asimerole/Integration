@@ -38,29 +38,18 @@
 #include <openssl/rand.h>
 
 // Names for log files
-const std::string LOG_FILE = "Errors.txt";
-const std::string FTP_LOG_FILE = "ErrorsFTP.txt";
-const std::string INTEGRATION_LOG_FILE = "ErrorsIntegration.txt";
-const std::string EMAIL_LOG_FILE = "ErrorsEmail.txt";
-const std::string ONEDRIVE_LOG_FILE = "ErrorsOneDrive.txt";
+const std::string LOG_PATH = "Errors.txt";
+const std::string FTP_LOG_PATH = "ErrorsFTP.txt";
+const std::string INTEGRATION_LOG_PATH = "ErrorsIntegration.txt";
+const std::string EMAIL_LOG_PATH = "ErrorsEmail.txt";
+const std::string ONEDRIVE_LOG_PATH = "ErrorsOneDrive.txt";
 const std::string EXCEPTION_LOG_PATH = "Exceptions.txt";
 
 // TODO: meybe should some with this log functions doing
 void trimLogFile(const std::string& filePath);
 
-void logToFile(const std::wstring& message, const std::string& filePath);
-
-void logError(const std::wstring& message);
-
-void logFtpError(const std::wstring& message);
-
-void logIntegrationError(const std::wstring& message);
-
-void logEmailError(const std::wstring& message);
- 
-void logOneDriveError(const std::wstring& message);
-
-void logExceptions(const std::wstring& message);
+// Method to log messages to a file
+void logError(const std::wstring& message, const std::string& filePath);
 
 // Method to convert "utf8" string to "wstring" format
 std::wstring utf8_to_wstring(const std::string& str);	
