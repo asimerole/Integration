@@ -187,6 +187,20 @@ std::string base64Encode(const std::string& input)
     return encodedData;
 }
 
+std::vector<uint8_t> base64Decode(const std::string& input) {
+    DWORD outLen = 0;
+    if (!CryptStringToBinaryA(input.c_str(), input.size(), CRYPT_STRING_BASE64, NULL, &outLen, NULL, NULL))
+        throw std::runtime_error("Failed to get length for Base64 decode");
+
+    std::vector<uint8_t> buffer(outLen);
+    if (!CryptStringToBinaryA(input.c_str(), input.size(), CRYPT_STRING_BASE64, buffer.data(), &outLen, NULL, NULL))
+        throw std::runtime_error("Base64 decode failed");
+
+    buffer.resize(outLen); // на всякий случай
+    return buffer;
+}
+
+
 // To avoid problems with single quotes in SQL query
 std::wstring escapeSingleQuotes(const std::wstring& input) {
     std::wstring result;
@@ -326,4 +340,118 @@ bool isWithinLastNDays(const std::wstring& fileDate, int days)
     double difference = std::difftime(currentTime, fileTime) / (60 * 60 * 24);
     return difference <= days;
 }
+
+std::vector<uint8_t> encryptData(const std::vector<uint8_t>& data, const unsigned char* key, const unsigned char* iv)
+{
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+        throw std::runtime_error("Failed to create cipher context");
+
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error("EVP_EncryptInit_ex failed");
+    }
+
+    std::vector<uint8_t> encrypted;
+    encrypted.resize(data.size() + EVP_CIPHER_block_size(EVP_aes_256_cbc()));
+
+    int outLen1 = 0;
+    if (EVP_EncryptUpdate(ctx, encrypted.data(), &outLen1, data.data(), static_cast<int>(data.size())) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error("EVP_EncryptUpdate failed");
+    }
+
+    int outLen2 = 0;
+    if (EVP_EncryptFinal_ex(ctx, encrypted.data() + outLen1, &outLen2) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error("EVP_EncryptFinal_ex failed");
+    }
+
+    encrypted.resize(outLen1 + outLen2);
+    EVP_CIPHER_CTX_free(ctx);
+
+    return encrypted;
+}
+
+std::vector<uint8_t> decryptDataFromMemory(const std::vector<uint8_t>& encryptedData, const unsigned char* key, const unsigned char* iv)
+{
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+        throw std::runtime_error("Failed to create cipher context");
+
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error("EVP_DecryptInit_ex failed");
+    }
+
+    std::vector<uint8_t> decrypted;
+    decrypted.resize(encryptedData.size());
+
+    int outLen1 = 0;
+    if (EVP_DecryptUpdate(ctx, decrypted.data(), &outLen1, encryptedData.data(), static_cast<int>(encryptedData.size())) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error("EVP_DecryptUpdate failed");
+    }
+
+    int outLen2 = 0;
+    if (EVP_DecryptFinal_ex(ctx, decrypted.data() + outLen1, &outLen2) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error("EVP_DecryptFinal_ex failed");
+    }
+
+    decrypted.resize(outLen1 + outLen2);
+    EVP_CIPHER_CTX_free(ctx);
+
+    return decrypted;
+}
+
+void saveCredentailsToHash(std::wstring& login, std::wstring& password) {
+	std::vector<uint8_t> encryptedLogin = encryptData(
+		std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(login.data()), reinterpret_cast<const uint8_t*>(login.data()) + login.size() * sizeof(wchar_t)),
+		key, iv);
+
+	std::vector<uint8_t> encryptedPassword = encryptData(
+		std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(password.data()), reinterpret_cast<const uint8_t*>(password.data()) + password.size() * sizeof(wchar_t)),
+		key, iv);
+
+    HKEY hKey;
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Recon\\Recon-Integration", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+		std::string encLogin = base64Encode(std::string(reinterpret_cast<const char*>(encryptedLogin.data()), encryptedLogin.size()));
+		std::string encPass = base64Encode(std::string(reinterpret_cast<const char*>(encryptedPassword.data()), encryptedPassword.size()));
+
+        RegSetValueExA(hKey, "LastUsedLogin", 0, REG_SZ, (const BYTE*)encLogin.c_str(), encLogin.size() + 1);
+        RegSetValueExA(hKey, "LastUsedPassword", 0, REG_SZ, (const BYTE*)encPass.c_str(), encPass.size() + 1);
+        RegCloseKey(hKey);
+    }
+}
+
+void loadCredentials(std::wstring& login, std::wstring& password) {
+    HKEY hKey;
+    char buffer[1024]; // Увеличим размер буфера на случай длинного base64
+    DWORD bufferSize = sizeof(buffer);
+    DWORD type;
+
+    if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Recon\\Recon-Integration", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        bufferSize = sizeof(buffer);
+        if (RegQueryValueExA(hKey, "LastUsedLogin", 0, &type, reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS && type == REG_SZ) {
+            std::string encodedLogin(buffer, bufferSize - 1); // исключаем нуль-терминатор
+            std::vector<uint8_t> encryptedLogin = base64Decode(encodedLogin);
+            std::vector<uint8_t> decryptedLogin = decryptDataFromMemory(encryptedLogin, key, iv);
+            login = std::wstring(reinterpret_cast<wchar_t*>(decryptedLogin.data()), decryptedLogin.size() / sizeof(wchar_t));
+        }
+
+        bufferSize = sizeof(buffer);
+        if (RegQueryValueExA(hKey, "LastUsedPassword", 0, &type, reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS && type == REG_SZ) {
+            std::string encodedPassword(buffer, bufferSize - 1); // исключаем нуль-терминатор
+            std::vector<uint8_t> encryptedPassword = base64Decode(encodedPassword);
+            std::vector<uint8_t> decryptedPassword = decryptDataFromMemory(encryptedPassword, key, iv);
+            password = std::wstring(reinterpret_cast<wchar_t*>(decryptedPassword.data()), decryptedPassword.size() / sizeof(wchar_t));
+        }
+
+        RegCloseKey(hKey);
+    }
+}
+
+
+
 

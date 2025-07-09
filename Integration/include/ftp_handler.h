@@ -11,6 +11,7 @@
 #include <sql.h>
 #include <sys/stat.h>
 #include <sys/utime.h>  
+#include <map>
 
 namespace fs = boost::filesystem;
 
@@ -45,14 +46,23 @@ struct FtpTransferContext {
 
 class Ftp {
 public:
+    static Ftp& getInstance() {
+        static Ftp instance;
+        return instance;
+    }
+
+    // prohibit copying
+    Ftp(const Ftp&) = delete;
+    void operator=(const Ftp&) = delete;
+
     // protocol (ftp or ftps)
-    static const std::wstring& protocol() {
+    const std::wstring& protocol() {
         static const std::wstring p = L"ftp://";
         return p;
     }
 
 	// Coding URL
-    static std::string encodeURL(const std::string& url);
+    std::string encodeURL(const std::string& url);
 
 	// Writing data to a file
     static size_t write_data(void* ptr, size_t size, size_t nmemb, FILE* stream);
@@ -61,36 +71,54 @@ public:
     static size_t write_list_stream(void* buffer, size_t size, size_t nmemb, void* userp);
 
 	// Processing a single file
-    static void processSingleFile(const std::string& fileName, FtpTransferContext& context);
+    void processSingleFile(const std::string& fileName, FtpTransferContext& context);
 
 	// Collect ftp servers from the database
-    static void collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc);
+    void collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc);
 
 	// Method to set time for files
-    static void setFileTime(const std::string& filePath, const std::string& timestamp);
+    void setFileTime(const std::string& filePath, const std::string& timestamp);
 
 	// Downloads a file from the server
-    static bool downloadFile(const std::string& fileName, const ServerInfo& server, const std::string url, const std::wstring& ftpCacheDirPath);
+    bool downloadFile(const std::string& fileName, const ServerInfo& server, const std::string url, const std::wstring& ftpCacheDirPath);
 
 	// Deletes a file from the server
-    static int deleteFile(const std::string& filename, const ServerInfo& server, const std::string& url);
+    int deleteFile(const std::string& filename, const ServerInfo& server, const std::string& url);
 
 	// Checks if the server is reachable
-    static bool checkConnection(const std::string& url, const std::string login, const std::string pass);
+    bool checkConnection(const std::string& url, const std::string login, const std::string pass);
 
 	// Checks if the server is active
-    static bool isServerActive(const ServerInfo& server, SQLHDBC dbc);
+    bool isServerActive(const ServerInfo& server, SQLHDBC dbc);
 
 	// Creates a local directory tree based on server information
-    static void createLocalDirectoryTree(ServerInfo& server, std::string rootFolder);
+    void createLocalDirectoryTree(ServerInfo& server, std::string rootFolder);
 
 	// Transferring files from the server
-    static void fileTransfer(const ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, std::atomic_bool& oneDriveIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath);
+    void fileTransfer(const ServerInfo& server, const std::string& url, const std::wstring& oneDrivePath, std::atomic_bool& ftpIsActive, std::atomic_bool& oneDriveIsActive, SQLHDBC dbc, const std::wstring& ftpCacheDirPath);
+
+	// Method to save the last ping time for a server
+    void pingServer(int serverId, time_t time) {
+        serverLastPing[serverId] = time;
+    }
+
+	// Method to get the last ping time for a server
+    const time_t getLastPing(int serverId) const {
+        auto it = serverLastPing.find(serverId);
+        return it != serverLastPing.end() ? it->second : 0;
+    }
+
 
 
 private:
+	// Private constructor to prevent instantiation
+    Ftp() {}
+
 	// Vector to store server information
     std::vector<ServerInfo> servers;
+   
+    // Storing last server pings for Logs table 
+    std::map<int, std::time_t> serverLastPing;
 };
 
 #endif // FTP_H

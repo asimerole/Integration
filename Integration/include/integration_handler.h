@@ -15,6 +15,7 @@
 #include <utils.h>
 #include <cwctype>
 #include <boost/algorithm/string/predicate.hpp>
+#include "ftp_handler.h"
 
 namespace fs = boost::filesystem;
 
@@ -33,7 +34,7 @@ public:
     static void sortFiles(const FileInfo& fileInfo);
 
     // General method of collecting information and a pair of files
-    static void collectInfo(FileInfo& fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, SQLHDBC dbc);
+    static void collectInfo(FileInfo& fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, const std::wstring pathToOMPExecutable, SQLHDBC dbc);
 
     // Method to get path for file by recon number
     static std::wstring getPathByRNumber(int recon_id, SQLHDBC dbc);
@@ -49,9 +50,6 @@ public:
 
     // Checking a folder for sorted name
     static bool isSortedFolder(const std::wstring& folderName);
-
-    // Insert last ping into serverPings struct
-    static void insertServerPing(int reconId, std::time_t lastPing);
 
 private:
     // Checking file name for validity
@@ -86,9 +84,6 @@ private:
 
     // Storing file paths
     std::unordered_set<std::wstring> parentFolders;
-     
-    // Storing last server pings for Logs table 
-    static std::map<int, std::time_t> serverPings;
 	
     // Path to root folder
     std::wstring rootFolder;

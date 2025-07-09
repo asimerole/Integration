@@ -27,9 +27,9 @@ std::string Database::findConfigFile() {
 }
 
 // Getting the root folder from the database
-std::wstring Database::getRootFolder(SQLHDBC dbc) {
+std::wstring Database::getPathFromDbByName(SQLHDBC dbc, std::wstring name) {
     std::wstringstream queryStream;
-    queryStream << L"SELECT [value] FROM [ReconDB].[dbo].[access_settings] WHERE [name] = 'root_directory'";
+    queryStream << L"SELECT [value] FROM [ReconDB].[dbo].[access_settings] WHERE [name] = '" + name  + L"'";
     std::wstring queryStr = queryStream.str();
 
     SQLHSTMT stmt = SQL_NULL_HSTMT;

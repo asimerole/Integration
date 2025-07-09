@@ -72,7 +72,7 @@ size_t Ftp::write_list_stream(void* buffer, size_t size, size_t nmemb, void* use
         if (filename.empty()) continue;
 
         // We pass the entire context to the handler
-        processSingleFile(filename, *context);
+        Ftp::getInstance().processSingleFile(filename, *context);
     }
 
     return totalSize;
@@ -226,8 +226,8 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
                 }
                 auto now = std::chrono::system_clock::now();
                 server.lastPingTime = std::chrono::system_clock::to_time_t(now); 
-               
-                Integration::insertServerPing(server.reconId, server.lastPingTime);
+                Ftp::getInstance().pingServer(server.reconId, server.lastPingTime);
+				logError(L"[FTP] Connection successful for " + server.ip + L"/" + server.remoteFolderPath + L"/", FTP_LOG_PATH);
             }
 
             server.unit = (unitLen != SQL_NULL_DATA) ? unit : L"";
@@ -525,48 +525,63 @@ std::wstring sanitizeFileName(std::wstring name) {
     return name;
 }
 
-
 // Function to remove spaces from the beginning and end of a string
-std::wstring trim(const std::wstring& str) {
-    auto start = str.begin();
-    while (start != str.end() && std::iswspace(*start)) {
-        start++;
+std::wstring trim(const std::wstring& s) {
+    size_t start = 0;
+    while (start < s.size() && iswspace(s[start])) ++start;
+    size_t end = s.size();
+    while (end > start && iswspace(s[end - 1])) --end;
+    return s.substr(start, end - start);
+}
+
+// Split the string by hyphens (with or without spaces)
+std::vector<std::wstring> splitByDash(const std::wstring& str) {
+    std::vector<std::wstring> parts;
+    size_t start = 0;
+    size_t pos = 0;
+
+    while (pos < str.size()) {
+        if (str[pos] == L'-') {
+            std::wstring part = str.substr(start, pos - start);
+            parts.push_back(trim(part));
+
+            pos++;
+            while (pos < str.size() && iswspace(str[pos])) pos++;
+            start = pos;
+        }
+        else {
+            pos++;
+        }
     }
 
-    auto end = str.end();
-    do {
-        end--;
-    } while (std::distance(start, end) > 0 && std::iswspace(*end));
+    if (start < str.size()) {
+        parts.push_back(trim(str.substr(start)));
+    }
 
-    return std::wstring(start, end + 1);
+    return parts;
 }
 
 // Creating a folder tree
 void Ftp::createLocalDirectoryTree(ServerInfo& server, std::string rootFolder) {
     std::wstring rootFolderW = utf8_to_wstring(rootFolder);
-
+   
     // Processing `server.unit`
     std::wstring unitW = sanitizeFileName(server.unit);
-    std::wstring firstPart, secondPart;
 
-    size_t separatorPos = unitW.find(L" - ");
-    if (separatorPos != std::wstring::npos) {
-        firstPart = unitW.substr(0, separatorPos);
-        secondPart = trim(unitW.substr(separatorPos + 3));
-    }
-    else {
-        firstPart = unitW;
-    }
+	std::vector<std::wstring> unitParts = splitByDash(unitW);
+    
+    fs::path fullPath = rootFolderW;
 
-    // Forming a path with protection from prohibited characters
-    std::wstring path = rootFolderW + L"/" + sanitizeFileName(firstPart) + L"/" +
-        sanitizeFileName(secondPart) + L"/" +
-        sanitizeFileName(server.substation) + L"/" +
-        sanitizeFileName(server.object) + L"/";
+	for (const auto& part : unitParts) {
+		fullPath /= sanitizeFileName(part);
+	}
+
+	fullPath /= sanitizeFileName(server.substation);
+	fullPath /= sanitizeFileName(server.object);
 
     // Безопасно создаём все директории
-    if (!fs::exists(path)) {
-        fs::create_directories(path);
+    if (!fs::exists(fullPath)) {
+        fs::create_directories(fullPath);
     }
 }
 
@@ -628,6 +643,7 @@ void Ftp::fileTransfer(const ServerInfo& server, const std::string& url,
         logError(L"[FTP] Unknown error occurred", EXCEPTION_LOG_PATH);
     }
 }
+
 
 
 

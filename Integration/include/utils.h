@@ -36,6 +36,10 @@
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
 #include <openssl/rand.h>
+#include <openssl/sha.h>
+#include <string>
+#include <sstream>
+#include <iomanip>
 
 // Names for log files
 const std::string LOG_PATH = "Errors.txt";
@@ -69,6 +73,9 @@ std::string cp866_to_utf8(const std::string& cp866_str);
 // Base64 encoding according to MIME header format.
 std::string base64Encode(const std::string& input);
 
+// Base64 decoding according to MIME header format.
+std::vector<uint8_t> base64Decode(const std::string& input);
+
 // Method for skipping single parentheses in parameters from a file
 std::wstring escapeSingleQuotes(const std::wstring& input);	
 
@@ -89,6 +96,14 @@ bool parseDate(const std::wstring& dateString, std::tm& tm);
 
 // Check if a file date is within the last N days.
 bool isWithinLastNDays(const std::wstring& fileDate, int days);
+
+std::vector<uint8_t> encryptData(const std::vector<uint8_t>& data, const unsigned char* key, const unsigned char* iv);
+
+std::vector<uint8_t> decryptDataFromMemory(const std::vector<uint8_t>& encryptedData, const unsigned char* key, const unsigned char* iv);
+
+void saveCredentailsToHash(std::wstring &login, std::wstring &password);
+
+void loadCredentials(std::wstring& login, std::wstring& password);
 
 
 #endif // UTILS_H
