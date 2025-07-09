@@ -45,7 +45,7 @@ public:
 	static int executeSQLAndGetIntResult(SQLHDBC dbc, const std::wstringstream& query);
 
 	// Getting the root folder
-	static std::wstring getRootFolder(SQLHDBC dbc);
+	static std::wstring getPathFromDbByName(SQLHDBC dbc, std::wstring name);
 
 	// Getting a connection handle
 	SQLHDBC getConnectionHandle() const;

@@ -15,10 +15,6 @@ namespace fs = boost::filesystem;
 
 std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
 
-const std::wstring pathToOMPExecutable = L"C:\\Recon\\WinRec-BS\\OMP_C"; // Path to OMP_C app
-
-std::map<int, std::time_t> Integration::serverPings;
-
 // Method of starting an external program with a flag and waiting for it to complete
 bool Integration::runExternalProgramWithFlag(const std::wstring& programPath, const std::wstring& inputFilePath) {
     try {
@@ -107,11 +103,6 @@ bool Integration::isSortedFolder(const std::wstring& folderName) {
         logError(stringToWString("Exception caught in isSortedFolder: ") + stringToWString(e.what()), EXCEPTION_LOG_PATH);
     }
     return false;
-}
-
-void Integration::insertServerPing(int reconId, std::time_t lastPing)
-{
-    serverPings[reconId] = lastPing;
 }
 
 // Function to extract value from parameter string
@@ -425,7 +416,7 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int 
     std::wstring formattedDate = file->date.substr(6, 4) + L"-" + file->date.substr(3, 2) + L"-" + file->date.substr(0, 2);
     std::wstring formattedTime = file->time;
 
-    if (file->binaryData.empty()) {
+    if (file->binaryData.empty() || file->binaryDataSize == 0) {
 		return -1; // No binary data to insert
     }
 
@@ -625,13 +616,31 @@ std::wstring formatDateTime(std::time_t time)
     return woss.str(); 
 }
 
+std::wstring ConvertToSqlDateTimeFormat(const std::wstring& date, const std::wstring& time)
+{
+    // date = L"31/07/2024", time = L"15:21:32"
+    int day, month, year;
+    wchar_t sep;
+    std::wstringstream ss(date);
+    ss >> day >> sep >> month >> sep >> year;
+
+    std::wstringstream formatted;
+    formatted << std::setfill(L'0');
+    formatted << year << L"-"
+        << std::setw(2) << month << L"-"
+        << std::setw(2) << day << L" "
+        << time; // assume time already like "15:21:32"
+
+    return formatted.str(); // L"2024-07-31 15:21:32"
+}
+
 void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int struct_id)
 {
     std::shared_ptr<ExpressFile> expressFile = nullptr;
     std::shared_ptr<DataFile> dataFile = nullptr;
     std::shared_ptr<BaseFile> baseFile = nullptr;
 
-    int filesCount = fileInfo.files.size();
+    size_t filesCount = fileInfo.files.size();
 
     switch (filesCount) {
     case 1:
@@ -668,23 +677,20 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     int reconId = (baseFile) ? baseFile->reconNumber : (dataFile) ? dataFile->reconNumber : 0;
 
     // last_ping
-    std::wstring lastPingDateTimeStr;
-    auto it = serverPings.find(reconId);
-    if (it != serverPings.end()) {
-        std::time_t pingTime = it->second;
-        lastPingDateTimeStr = formatDateTime(pingTime);
-    }
+	std::time_t lastPingTime = Ftp::getInstance().getLastPing(reconId);
+	logError(L"[Integration] Last ping time: " + formatDateTime(lastPingTime), INTEGRATION_LOG_PATH);
+    std::wstring lastPingDateTimeStr = formatDateTime(lastPingTime);
 
     // last_recon
     std::wstring lastReconDateTimeStr;
     if (expressFile && dataFile) {
-        lastReconDateTimeStr = expressFile->date + L" " + expressFile->time;
+        lastReconDateTimeStr = ConvertToSqlDateTimeFormat(expressFile->date, expressFile->time);
     }
 
     // last_daily
     std::wstring lastDailyDateTimeStr;
     if (baseFile && baseFile->fileName.substr(0, 5) == L"DAILY") {
-        lastDailyDateTimeStr = baseFile->date + L" " + baseFile->time;
+        lastDailyDateTimeStr = ConvertToSqlDateTimeFormat(baseFile->date, baseFile->time);
     }
 
     SQLHSTMT hstmt = SQL_NULL_HSTMT;
@@ -832,7 +838,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0,
         &idFromStruct, 0, nullptr);
     debugLog << L"\n[" << paramIndex - 1 << L"] idFromStruct = " << idFromStruct;
-    logError(debugLog.str(), INTEGRATION_LOG_PATH);
+    //logError(debugLog.str(), INTEGRATION_LOG_PATH);
     ret = SQLExecute(hstmt);
     if (!SQL_SUCCEEDED(ret)) {
         logSQLError("Failed to execute insert/update logs", hstmt, SQL_HANDLE_STMT);
@@ -948,8 +954,8 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
             }
         }
 
-        // Insert into dbo.logs
-        if (struct_id != -1 && data_id != -1 && dbIsFull) {
+        // Insert into dbo.logs && dbIsFull
+        if (struct_id != -1 && data_id != -1 ) {
             insertIntoLogsTable(dbc, fileInfo, struct_id);
         }
 
@@ -988,7 +994,7 @@ std::wstring Integration::join(const std::vector<std::wstring>& parts, const std
 }
 
 // Method for collecting information about files
-void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, SQLHDBC dbc) {
+void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& entry, std::wstring rootFolder, const std::wstring pathToOMPExecutable, SQLHDBC dbc) {
     try {
 
         //logIntegrationError(L"[Integration] collect info was started");
@@ -1027,7 +1033,7 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
 
                 if (!containsLetters) {
                     if (std::regex_match(fileName, pattern))    {
-                        if (!runExternalProgramWithFlag(pathToOMPExecutable, fullPath)) {
+                        if (!runExternalProgramWithFlag(pathToOMPExecutable + L"\\OMP-C", fullPath)) {
                             logError(L"File: " + fileName + L" is broken.", LOG_PATH);
                             return;
                         }
@@ -1066,7 +1072,11 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
             auto dataFile = std::make_shared<DataFile>();
             std::wstring dataFileName = L"RECON" + baseName;
             std::wstring dataFilePath = pathToFile + dataFileName;
-    
+            
+            if (!fs::exists(dataFilePath)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+
             if (fs::exists(dataFilePath)) {
                 dataFile->fileName = dataFileName;
                 dataFile->parentFolderPath = pathToFile;

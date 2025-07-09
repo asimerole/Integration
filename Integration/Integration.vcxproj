@@ -162,6 +162,7 @@
     <ClInclude Include="include\mail_handler.h" />
     <ClInclude Include="include\utils.h" />
     <ClInclude Include="onedrive_handler.h" />
+    <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="app_icon.rc" />
