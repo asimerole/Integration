@@ -71,6 +71,7 @@ struct DataFile : public BaseFile {
     void processFile() override {
         hasDataFile = true;
         binaryData = readFileContent();
+        getFileDateAndTime();
     }
 };
 
