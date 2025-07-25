@@ -103,7 +103,11 @@ std::vector<uint8_t> decryptDataFromMemory(const std::vector<uint8_t>& encrypted
 
 void saveCredentailsToHash(std::wstring &login, std::wstring &password);
 
+void deleteCredentialsFromRegistry();
+
 void loadCredentials(std::wstring& login, std::wstring& password);
+
+std::wstring getFileDate(std::wstring fullPath);
 
 
 #endif // UTILS_H

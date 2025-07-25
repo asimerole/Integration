@@ -55,7 +55,11 @@ void BaseFile::processPath(std::wstring rootFolder)
     fs::path relativePath = fs::relative(parentPath, rootFolder);
     std::vector<std::wstring> pathParts;
 
+	std::wstring rootFolderName = fs::path(rootFolder).filename().wstring();
     for (const auto& part : relativePath) {
+        if (part.wstring() == rootFolderName) {
+			break; // Stop if we reach the root folder
+        }
         pathParts.push_back(part.wstring());
     }
 

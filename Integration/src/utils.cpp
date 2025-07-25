@@ -425,6 +425,16 @@ void saveCredentailsToHash(std::wstring& login, std::wstring& password) {
     }
 }
 
+void deleteCredentialsFromRegistry() {
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Recon\\Recon-Integration", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+        RegDeleteValueA(hKey, "LastUsedLogin");
+        RegDeleteValueA(hKey, "LastUsedPassword");
+        RegCloseKey(hKey);
+    }
+}
+
+
 void loadCredentials(std::wstring& login, std::wstring& password) {
     HKEY hKey;
     char buffer[1024]; // Увеличим размер буфера на случай длинного base64
@@ -453,5 +463,28 @@ void loadCredentials(std::wstring& login, std::wstring& password) {
 }
 
 
+std::wstring getFileDate(std::wstring fullPath)
+{
+    WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+
+    if (!GetFileAttributesExW(fullPath.c_str(), GetFileExInfoStandard, &fileInfo)) {
+        logError(L"[getFileDateAndTime]: Error opening file", INTEGRATION_LOG_PATH);
+        return L"";
+    }
+
+    // Time conversion
+    FILETIME localFileTime;
+    SYSTEMTIME sysTime;
+    FileTimeToLocalFileTime(&fileInfo.ftLastWriteTime, &localFileTime);
+    FileTimeToSystemTime(&localFileTime, &sysTime);
+
+    // Formatting date and time wYear wMonth wDay
+    std::wostringstream dateStream, timeStream;
+    dateStream << std::setw(2) << std::setfill(L'0') << sysTime.wDay << L"/"
+        << std::setw(2) << std::setfill(L'0') << sysTime.wMonth << L"/"
+        << std::setw(4) << std::setfill(L'0') << sysTime.wYear;
+
+    return dateStream.str();
+}
 
 

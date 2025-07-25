@@ -365,8 +365,6 @@ bool Ftp::downloadFile(const std::string& fileName, const ServerInfo& server, co
 
                 std::string timestamp = std::string(buffer); 
                 setFileTime(wstringToString(dataFile), timestamp);
-
-                //logFtpError(L"[FTP]: File timestamp (UTC): " + stringToWString(timestamp));
             }
         }
         else {

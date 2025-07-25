@@ -19,6 +19,17 @@
 
 namespace fs = boost::filesystem;
 
+struct RecordsInfoFromDB {
+	bool hasDataBinary = false;     // Data file binary exists
+	bool hasExpressBinary = false;  // Express file binary exists
+	bool hasOtherBinary = false;    // Other file binary exists
+	bool needDataProcess = false;   // Need insert into precess table
+	int data_id = -1;               // ID in data table
+	int struct_id = -1;             // ID in struct table
+	int unit_id = -1;               // ID in units table
+	int dataProcess_id = -1;        // ID in data_process table
+};
+
 class Integration {
 public:
     // Run OMP_C program
@@ -65,7 +76,7 @@ private:
     static bool checkIsOtherFiles(const std::wstring& fileName);
 
     // Getting id's from tables: data, units, struct 
-    static std::tuple<int, int, int, int> getRecordIDs(SQLHDBC dbc, std::shared_ptr<BaseFile> file, bool needDataProcess);
+    static void getRecordInfo(SQLHDBC dbc, std::shared_ptr<BaseFile> file, RecordsInfoFromDB &recordsInfo);
 
     // Insert into units
     static int insertIntoUnitTable(SQLHDBC dbc, const std::shared_ptr<BaseFile> file);
@@ -74,7 +85,7 @@ private:
     static int insertIntoStructTable(SQLHDBC dbc, const std::shared_ptr<BaseFile> file);
 
     // Insert into data
-    static int insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, int struct_id);
+    static int insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, RecordsInfoFromDB recordsInfo);
 
     // Insert into data_process
     static int insertIntoProcessTable(SQLHDBC dbc, const std::shared_ptr<BaseFile> file, int data_id);

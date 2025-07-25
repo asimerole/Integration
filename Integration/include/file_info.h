@@ -10,6 +10,9 @@ struct BaseFile;
 
 struct FileInfo {
     std::vector<std::shared_ptr<BaseFile>> files;
+    bool hasExpressFile = false;
+    bool hasDataFile = false;
+    bool hasOtherTypeFile = false;
 };
 
 #endif
