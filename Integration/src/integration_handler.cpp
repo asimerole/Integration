@@ -64,13 +64,13 @@ bool Integration::isFileNameValid(const std::wstring& fileName) {
 }
 
 //Method to check if a file is a data file
-bool Integration::checkIsDataFile(const std::wstring& fileName) {
-    return fileName.size() >= 5 && (fileName.substr(0, 5) == L"RECON" || fileName.substr(0, 5) == L"recon");
+bool Integration::checkIsDataFile(const std::wstring& filePrefix) {
+    return filePrefix.size() >= 5 && (filePrefix == L"RECON" || filePrefix == L"recon");
 }
 
 // Method to check if a file is an express file
-bool Integration::checkIsExpressFile(const std::wstring& fileName) {
-    return fileName.size() >= 5 && (fileName.substr(0, 5) == L"REXPR" || fileName.substr(0, 5) == L"rexpr");
+bool Integration::checkIsExpressFile(const std::wstring& filePrefix) {
+    return filePrefix.size() >= 5 && (filePrefix == L"REXPR" || filePrefix == L"rexpr");
 }
 
 bool Integration::checkIsOtherFiles(const std::wstring& fileName)
@@ -203,8 +203,14 @@ void Integration::getRecordInfo(SQLHDBC dbc, std::shared_ptr<BaseFile> file, Rec
         LEFT JOIN [ReconDB].[dbo].[struct] s 
             ON s.recon_id = ? AND s.object = ?
         LEFT JOIN [ReconDB].[dbo].[data] d 
-            ON d.struct_id = s.id AND d.file_num = ? AND d.date = CAST(? AS DATE)
-    )";
+            ON d.struct_id = s.id AND d.file_num = ?)";
+
+    if (file->filePrefix == L"RECON" || file->filePrefix == L"REXPR") {
+        sqlQuery += LR"( AND d.date = CAST(? AS DATE) )";
+    }
+    else {
+        sqlQuery += L" AND d.time = CAST(? AS TIME(3)) AND d.file_type = '" + file->filePrefix + L"'";
+    }
 
     if (recordsInfo.needDataProcess) {
         sqlQuery += LR"(
@@ -223,24 +229,31 @@ void Integration::getRecordInfo(SQLHDBC dbc, std::shared_ptr<BaseFile> file, Rec
     }
 
     std::wstring formattedDate = file->date.substr(6, 4) + L"-" + file->date.substr(3, 2) + L"-" + file->date.substr(0, 2);
+	int paramIndex = 1;
 
     // Bind parameters
-    ret = SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 255, 0,
+    ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 255, 0,
         const_cast<int*>(&file->reconNumber), 0, nullptr);   
 
-    ret = SQLBindParameter(hstmt, 2, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 255, 0,
+    ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 255, 0,
         (SQLWCHAR*)file->object.c_str(), 0, nullptr);
 
-    ret = SQLBindParameter(hstmt, 3, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_VARCHAR, 3, 0,
+    ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_VARCHAR, 3, 0,
         (SQLWCHAR*)file->fileNum.c_str(), 0, nullptr);
 
-    ret = SQLBindParameter(hstmt, 4, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, formattedDate.size(), 0,
-        (SQLWCHAR*)formattedDate.c_str(), (formattedDate.size() + 1) * sizeof(wchar_t), nullptr);
+    if (file->filePrefix == L"RECON" || file->filePrefix == L"REXPR") {
+        ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, formattedDate.size(), 0,
+            (SQLWCHAR*)formattedDate.c_str(), (formattedDate.size() + 1) * sizeof(wchar_t), nullptr);
+    }
+    else {
+        ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 30, 0,
+            (SQLWCHAR*)file->time.c_str(), 0, nullptr);
+    }
 
-    ret = SQLBindParameter(hstmt, 5, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 255, 0,
+    ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 255, 0,
         (SQLWCHAR*)file->unit.c_str(), 0, nullptr);
 
-    ret = SQLBindParameter(hstmt, 6, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 255, 0,
+    ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 255, 0,
         (SQLWCHAR*)file->substation.c_str(), 0, nullptr);
 
     ret = SQLExecute(hstmt);
@@ -1142,7 +1155,6 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
                     try {
                         // Parsing JSON
                         auto config = parseMailServerConfig(configJson);
-                        logError(L"[Mail] Config file was received successfully.", EMAIL_LOG_PATH);
                         sendEmails(config, users, fileInfo);
 
                     }
@@ -1212,6 +1224,7 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
 
         //logIntegrationError(L"[Integration] collect info was started");
         std::wstring fileName = entry.path().filename().wstring();              // Name of file ex. (RECON167.759)
+		std::wstring filePrefix = fileName.substr(0, 5);                        // File prefix ex. (RECON or REXPR)
         if (!isFileNameValid(fileName)) { return; }                             // Checking file name for validity
         std::wstring baseName = fileName.substr(5);                             // Recon number and file number ex. (167.759)     
         std::wstring pathToFile = entry.path().parent_path().wstring() + L"\\"; // Path to file
@@ -1219,13 +1232,14 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
         std::wstring reconNum = fileName.substr(5, 3);                          // Recon num
         std::wstring fileNum = fileName.substr(9, 3);                           // File num
     
-        if (checkIsDataFile(fileName)) {
+        if (checkIsDataFile(filePrefix)) {
             auto dataFile = std::make_shared<DataFile>();
             dataFile->fileName = fileName;
             dataFile->parentFolderPath = pathToFile;
             dataFile->fullPath = fullPath;
             dataFile->fileNum = fileNum;
             dataFile->reconNumber = std::stoi(reconNum);
+			dataFile->filePrefix = filePrefix;
     
             dataFile->processFile();
             dataFile->processPath(rootFolder);
@@ -1261,6 +1275,7 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
             expressFile->fullPath = expressFilePath;
             expressFile->fileNum = fileNum;
             expressFile->reconNumber = std::stoi(reconNum);
+			expressFile->filePrefix = L"REXPR";
     
             expressFile->processFile();
             expressFile->processPath(rootFolder);
@@ -1271,13 +1286,14 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
             fileInfo.files.push_back(expressFile);
     
         }
-        else if (checkIsExpressFile(fileName)) {
+        else if (checkIsExpressFile(filePrefix)) {
             auto expressFile = std::make_shared<ExpressFile>();
             expressFile->fileName = fileName;
             expressFile->parentFolderPath = pathToFile;
             expressFile->fullPath = fullPath;
             expressFile->fileNum = fileNum;
             expressFile->reconNumber = std::stoi(reconNum);
+            expressFile->filePrefix = filePrefix;
     
             expressFile->processFile();
             expressFile->processPath(rootFolder);
@@ -1294,6 +1310,7 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
                 dataFile->fullPath = dataFilePath;
                 dataFile->fileNum = fileNum;
                 dataFile->reconNumber = std::stoi(reconNum);
+                dataFile->filePrefix = L"RECON";
     
                 dataFile->processFile();
                 dataFile->processPath(rootFolder);
@@ -1308,6 +1325,7 @@ void Integration::collectInfo(FileInfo &fileInfo, const fs::directory_entry& ent
             baseFile->fullPath = fullPath;
             baseFile->fileNum = fileNum;
             baseFile->reconNumber = std::stoi(reconNum);
+			baseFile->filePrefix = filePrefix;
     
             baseFile->processFile();
             baseFile->processPath(rootFolder);
@@ -1379,6 +1397,7 @@ bool sortSingleFile(std::shared_ptr<BaseFile> file, const std::wstring& fileLabe
 
     std::wstring sourcePath = file->parentFolderPath + L"\\" + file->fileName;
     std::wstring newPath = newFolder + L"\\" + file->fileName;
+    file->fullPath = newPath;
     return moveFile(sourcePath, newPath, fileLabel);
 }
 

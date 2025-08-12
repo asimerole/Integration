@@ -276,7 +276,7 @@ std::vector<std::uint8_t> decryptData(const std::string& configPath, const unsig
     return decryptedData;
 }
 
-bool readConfigFile(std::string& configPath, std::string& serverName, std::string& databaseName, std::string& username, std::string& password)
+bool readConfigFile(std::string& configPath, std::string& serverName, std::string& databaseName, std::string& username, std::string& password, std::string& port)
 {
     std::vector<unsigned char> decryptedData = decryptData(configPath, key, iv);
     if (decryptedData.empty()) {
@@ -301,6 +301,9 @@ bool readConfigFile(std::string& configPath, std::string& serverName, std::strin
         else if (line.rfind("password=", 0) == 0) {
             password = line.substr(9);
         }
+		else if (line.rfind("port=", 0) == 0) {
+			port = line.substr(5);
+		}
     }
 
     return true;

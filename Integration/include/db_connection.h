@@ -38,9 +38,6 @@ public:
 	// Executing SQL query
 	static bool executeSQL(SQLHDBC dbc, const std::wstringstream& sql);	
 
-	// Inserting a binary file
-	static bool insertBinaryFileToDatabase(SQLHDBC dbc, const std::string& filePath, int structId);
-
 	// Inserting data with return of its ID
 	static int executeSQLAndGetIntResult(SQLHDBC dbc, const std::wstringstream& query);
 

@@ -107,7 +107,8 @@ bool BaseFile::getFileDateAndTime()
 
     timeStream << std::setw(2) << std::setfill(L'0') << sysTime.wHour << L":"
                << std::setw(2) << std::setfill(L'0') << sysTime.wMinute << L":"
-               << std::setw(2) << std::setfill(L'0') << sysTime.wSecond;
+               << std::setw(2) << std::setfill(L'0') << sysTime.wSecond << L"."
+               << std::setw(3) << std::setfill(L'0') << sysTime.wMilliseconds;
 
     // We write into the structure
     date = dateStream.str();

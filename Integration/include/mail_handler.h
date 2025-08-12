@@ -1,3 +1,6 @@
+#ifndef MAIL_HANDLER_H
+#define MAIL_HANDLER_H
+
 #include <string>
 #include <vector>
 #include <map>
@@ -31,4 +34,4 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string,
     std::vector<std::string>>& users, const FileInfo& fileInfo);
 
 
-
+#endif // MAIL_HANDLER_H

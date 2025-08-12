@@ -1,0 +1,4 @@
+2025-08-11 20:28:43.485 - [Integration] Second launch was started... Path to folder is: C:/development/TestFilesRecon/data/Cache
+2025-08-11 20:29:54.864 - [Integration] Second launch was started... Path to folder is: C:/development/TestFilesRecon/data/Cache
+2025-08-11 21:08:33.441 - [Integration] Second launch was started... Path to folder is: C:/development/TestFilesRecon/data/Cache
+2025-08-11 21:08:33.451 - [Integration] cycle 'for in integration' was started for path: C:/development/TestFilesRecon/data/Cache

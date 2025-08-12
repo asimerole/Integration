@@ -108,6 +108,10 @@ public:
         return it != serverLastPing.end() ? it->second : 0;
     }
 
+	const std::vector<ServerInfo>& getServers() const {
+		return servers;
+	}
+
 
 
 private:

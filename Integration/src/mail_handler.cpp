@@ -190,46 +190,64 @@ std::map<std::string, std::vector<std::string>> loadUsersFromDatabase(SQLHDBC db
     return substationUsers;
 }
 
+struct CurlSlistDeleter { void operator()(curl_slist* s) const noexcept { if (s) curl_slist_free_all(s); } };
+struct MimeDeleter { void operator()(curl_mime* m) const noexcept { if (m) curl_mime_free(m); } };
+struct CurlDeleter { void operator()(CURL* c) const noexcept { if (c) curl_easy_cleanup(c); } };
+
 bool sendEmails(const MailServerConfig& config, const std::map<std::string, std::vector<std::string>>& users, const FileInfo& fileInfo) {
     try {
+        if (fileInfo.files.empty()) {
+            return false;
+        }
 
         std::shared_ptr<ExpressFile> expressFile = nullptr;
         std::shared_ptr<DataFile> dataFile = nullptr;
         std::shared_ptr<BaseFile> baseFile = nullptr;
 
-        switch (fileInfo.files.size()) {
-        case 1:
-            if (typeid(*fileInfo.files[0]) == typeid(BaseFile)) {
-                baseFile = std::dynamic_pointer_cast<BaseFile>(fileInfo.files[0]);
+        if (fileInfo.files.size() == 1) {
+            baseFile = std::dynamic_pointer_cast<BaseFile>(fileInfo.files[0]);
+            if (!baseFile) {
+                // Maybe the single file is Express or Data Ч try casts and log accordingly
+                expressFile = std::dynamic_pointer_cast<ExpressFile>(fileInfo.files[0]);
+                dataFile = std::dynamic_pointer_cast<DataFile>(fileInfo.files[0]);
             }
-            else {
-                logError(L"[Mail] Expected only BaseFile, got derived type.", EMAIL_LOG_PATH);
-            }
-            break;
-
-        case 2:
-            for (const auto& file : fileInfo.files) {
-                if (auto ef = std::dynamic_pointer_cast<ExpressFile>(file)) {
-                    expressFile = ef;
-                }
-                else if (auto df = std::dynamic_pointer_cast<DataFile>(file)) {
-                    dataFile = df;
-                }
-                else {
+        }
+        else if (fileInfo.files.size() == 2) {
+            for (const auto& f : fileInfo.files) {
+                if (!expressFile && typeid(*f) == typeid(ExpressFile)) expressFile = std::dynamic_pointer_cast<ExpressFile>(f);
+                if (!dataFile && typeid(*f) == typeid(DataFile)) dataFile = std::dynamic_pointer_cast<DataFile>(f);
+                if (!baseFile && typeid(*f) == typeid(BaseFile)) baseFile = std::dynamic_pointer_cast<BaseFile>(f);
+                if (!expressFile && !dataFile && !baseFile) {
                     logError(L"[Mail] Unknown file type in fileInfo.files.", EMAIL_LOG_PATH);
                 }
             }
-            break;
-
-        default:
+        }
+        else {
             logError(L"[Mail] Unexpected number of files. Expected 1 or 2.", EMAIL_LOG_PATH);
-            break;
+            return false;
         }
 
-        std::shared_ptr<BaseFile> file = expressFile ? expressFile : baseFile;
+        std::shared_ptr<BaseFile> file = nullptr;
+        if (expressFile) {
+            // If ExpressFile is also-a BaseFile, this cast will succeed, otherwise file remains null
+            file = std::dynamic_pointer_cast<BaseFile>(expressFile);
+        }
+        else if (dataFile) {
+            // If DataFile is also-a BaseFile, this cast will succeed, otherwise file remains null
+            file = std::dynamic_pointer_cast<BaseFile>(dataFile);
+        }
+        else if (baseFile) {
+            file = baseFile;
+        }
+
+        if (!file) {
+            logError(L"[Mail] No suitable file found to extract metadata (unit/substation/object/date).", EMAIL_LOG_PATH);
+            return false;
+        }
 
         // Find users for the specified substation
-        auto it = users.find(wstringToString(file->substation));
+        std::string substationKey = wstringToString(file->substation);
+        auto it = users.find(substationKey);
         if (it == users.end()) {
             logError(L"[Mail] No users found for substation: " + file->substation, EMAIL_LOG_PATH);
             return false; // If there are no users, exit
@@ -240,135 +258,139 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
         }
 
         const std::vector<std::string>& recipientsList = it->second;
-
-        logError(L"[Mail] Initializing CURL for email sending...", EMAIL_LOG_PATH);
-
-        CURLcode res;
-        CURL* curl = curl_easy_init();
-        if (!curl) {
-            logError(L"[Mail] CURL initialization failed.", EMAIL_LOG_PATH);
+        if (recipientsList.empty()) {
+            logError(L"[Mail] Recipient list is empty for substation: " + file->substation, EMAIL_LOG_PATH);
             return false;
         }
 
-        logError(L"[Mail] CURL initialized successfully", EMAIL_LOG_PATH);
+        //logError(L"[Mail] Initializing CURL for email sending...", EMAIL_LOG_PATH);
+
+        CURL* rawCurl = curl_easy_init();
+        if (!rawCurl) {
+            logError(L"[Mail] CURL initialization failed.", EMAIL_LOG_PATH);
+            return false;
+        }
+        std::unique_ptr<CURL, CurlDeleter> curl(rawCurl);
+
+        //logError(L"[Mail] CURL initialized successfully", EMAIL_LOG_PATH);
 
         // Setting up a connection to the SMTP server
         std::string protocol = config.use_ssl ? "smtps://" : "smtp://";
-        std::string url = protocol + wstringToString(config.smtp_server) + ":" + wstringToString(config.port);
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        std::string smtpServerStr = wstringToString(config.smtp_server);
+        std::string portStr = wstringToString(config.port);
+        std::string url = protocol + smtpServerStr + ":" + portStr;
+        curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
         logError(L"[Mail] Set SMTP server URL to: " + stringToWString(url), EMAIL_LOG_PATH);
 
         // Enable certificate verification (for SSL)
         if (config.use_ssl) {
-            curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L); // Host Certificate Verification
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L); // Verifying the certificate chain
+            curl_easy_setopt(curl.get(), CURLOPT_USE_SSL, CURLUSESSL_ALL);
+            curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYHOST, 2L); // Host Certificate Verification
+            curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYPEER, 1L); // Verifying the certificate chain
             logError(L"[Mail] SSL verification enabled.", EMAIL_LOG_PATH);
         }
 
         // Authentication (if required)
+        std::string usernameStr;
+        std::string passwordStr;
         if (config.auth_required) {
-            curl_easy_setopt(curl, CURLOPT_USERNAME, wstringToString(config.auth_login).c_str());
-            curl_easy_setopt(curl, CURLOPT_PASSWORD, wstringToString(config.auth_password).c_str());
+            usernameStr = wstringToString(config.auth_login);
+            passwordStr = wstringToString(config.auth_password);
+            curl_easy_setopt(curl.get(), CURLOPT_USERNAME, usernameStr.c_str());
+            curl_easy_setopt(curl.get(), CURLOPT_PASSWORD, passwordStr.c_str());
             logError(L"[Mail] Authentication enabled for user: " + config.auth_login, EMAIL_LOG_PATH);
         }
 
         // Sender
-        std::string mailFrom = "<" + wstringToString(config.email_sender) + ">";
-        curl_easy_setopt(curl, CURLOPT_MAIL_FROM, mailFrom.c_str());
+        std::string emailSenderStr = wstringToString(config.email_sender);
+        std::string mailFrom = "<" + emailSenderStr + ">";
+        curl_easy_setopt(curl.get(), CURLOPT_MAIL_FROM, mailFrom.c_str());
         logError(L"[Mail] Set MAIL FROM to: " + stringToWString(mailFrom), EMAIL_LOG_PATH);
 
         // Setting up recipients
-        struct curl_slist* recipients = nullptr;
+        curl_slist* rawRecipients = nullptr;
         for (const std::string& recipient : recipientsList) {
-            recipients = curl_slist_append(recipients, ("<" + recipient + ">").c_str());
-            logError(L"[Mail] Added recipient: " + stringToWString(recipient), EMAIL_LOG_PATH);
+            std::string rec = "<" + recipient + ">";
+            rawRecipients = curl_slist_append(rawRecipients, rec.c_str());
+            logError(L"[Mail] Added recipient: " + stringToWString(rec), EMAIL_LOG_PATH);
         }
-        curl_easy_setopt(curl, CURLOPT_MAIL_RCPT, recipients);
+
+        std::unique_ptr<curl_slist, CurlSlistDeleter> recipients(rawRecipients);
+        curl_easy_setopt(curl.get(), CURLOPT_MAIL_RCPT, recipients.get());
 
         // Forming letter headers
-        std::string nameSender = wstringToUtf8(config.name_sender);
-        std::string fromHeader = "From: \"" + nameSender + "\" <" + wstringToString(config.email_sender) + ">";
-        std::wstring subject = file->unit + L": " + file->substation + L" (" + file->object + L")";
-        std::string subjectHeader = "Subject: " + wstringToUtf8(subject);
+        std::string nameSenderUtf8 = wstringToUtf8(config.name_sender);
+        std::string fromHeader = "From: \"" + nameSenderUtf8 + "\" <" + emailSenderStr + ">";
+        std::wstring subjectW = file->unit + L": " + file->substation + L" (" + file->object + L")";
+        std::string subjectHeader = "Subject: " + wstringToUtf8(subjectW);
 
-        struct curl_slist* headers = nullptr;
-        headers = curl_slist_append(headers, fromHeader.c_str());
-        headers = curl_slist_append(headers, subjectHeader.c_str());
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_slist* rawHeaders = nullptr;
+        rawHeaders = curl_slist_append(rawHeaders, fromHeader.c_str());
+        rawHeaders = curl_slist_append(rawHeaders, subjectHeader.c_str());
+        std::unique_ptr<curl_slist, CurlSlistDeleter> headers(rawHeaders);
+
+        // NOTE: CURLOPT_HTTPHEADER is used here (common approach). Alternatively, use curl_mime_headers on parts.
+        curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
         logError(L"[Mail] Headers set: " + stringToWString(fromHeader) + L"; " + stringToWString(subjectHeader), EMAIL_LOG_PATH);
 
-        curl_mime* mime = curl_mime_init(curl);
-        if (!mime) {
+        curl_mime* rawMime = curl_mime_init(curl.get());
+        if (!rawMime) {
             logError(L"[Mail] curl_mime_init failed Ч returned nullptr.", EMAIL_LOG_PATH);
             return false;
         }
-
+        std::unique_ptr<curl_mime, MimeDeleter> mime(rawMime);
 
         // Adding message text
-        curl_mimepart* part = curl_mime_addpart(mime);
-        curl_mime_data(part, wstringToUtf8(config.message_template).c_str(), CURL_ZERO_TERMINATED);
+        std::string messageUtf8 = wstringToUtf8(config.message_template);
+        curl_mimepart* part = curl_mime_addpart(mime.get());
+        curl_mime_data(part, messageUtf8.c_str(), CURL_ZERO_TERMINATED);
         curl_mime_type(part, "text/plain; charset=UTF-8");
         logError(L"[Mail] Email text body set successfully.", EMAIL_LOG_PATH);
 
+        auto attachIfExists = [&](const std::wstring& fullPathToFile, const std::wstring& fname, const std::wstring& logName) -> bool {
+            if (fname.empty()) return true; // nothing to attach
+            fs::path p = fullPathToFile;
+            if (!fs::exists(p)) {
+                logError(L"[Mail] Attachment not found: " + p.wstring(), EMAIL_LOG_PATH);
+                return false; // fail fast Ч you can decide to continue instead
+            }
+            std::string pathStr = wstringToString(p.wstring());
+            curl_mimepart* fpart = curl_mime_addpart(mime.get());
+            curl_mime_filedata(fpart, pathStr.c_str());
+            curl_mime_filename(fpart, wstringToString(fname).c_str());
+            logError(L"[Mail] Attached " + logName + L": " + p.wstring(), EMAIL_LOG_PATH);
+            return true;
+            };
+
         // Adding a data file
         if (dataFile && dataFile->hasDataFile) {
-            std::string dataFilePath = wstringToString(dataFile->parentFolderPath + L"\\" + dataFile->fileName);
-            logError(L"[Mail] Attaching data file: " + stringToWString(dataFilePath), EMAIL_LOG_PATH);
-
-            part = curl_mime_addpart(mime);
-            curl_mime_filedata(part, dataFilePath.c_str());                          // путь к первому файлу
-            curl_mime_filename(part, wstringToString(dataFile->fileName).c_str());   // им€ файла в письме
-            logError(L"[Mail] Data file attached successfully: " + dataFile->fileName, EMAIL_LOG_PATH);
+            if (!attachIfExists(dataFile->fullPath, dataFile->fileName, L"data file")) return false;
         }
 
-        // Adding an express file
+        // Attach express file
         if (expressFile && expressFile->hasExpressFile) {
-            std::string expressFilePath = wstringToString(expressFile->parentFolderPath + L"\\" + expressFile->fileName);
-            logError(L"[Mail] Attaching express file: " + stringToWString(expressFilePath), EMAIL_LOG_PATH);
-
-            part = curl_mime_addpart(mime);
-            curl_mime_filedata(part, expressFilePath.c_str());                          // путь ко второму файлу
-            curl_mime_filename(part, wstringToString(expressFile->fileName).c_str());   // им€ файла в письме
-            logError(L"[Mail] Express file attached successfully: " + expressFile->fileName, EMAIL_LOG_PATH);
+            if (!attachIfExists(expressFile->fullPath, expressFile->fileName, L"express file")) return false;
         }
 
-        // Processing a regular file
+        // Attach base file
         if (baseFile) {
-            std::string baseFilePath = wstringToString(baseFile->parentFolderPath + L"\\" + baseFile->fileName);
-            logError(L"[Mail] Attaching base file: " + stringToWString(baseFilePath), EMAIL_LOG_PATH);
-
-            part = curl_mime_addpart(mime);
-            curl_mime_filedata(part, baseFilePath.c_str());
-            curl_mime_filename(part, wstringToString(baseFile->fileName).c_str());
-            logError(L"[Mail] Base file attached successfully: " + baseFile->fileName, EMAIL_LOG_PATH);
+            if (!attachIfExists(baseFile->fullPath, baseFile->fileName, L"base file")) return false;
         }
-
 
         logError(L"[Mail] CURL upload setup completed.", EMAIL_LOG_PATH);
+        curl_easy_setopt(curl.get(), CURLOPT_MIMEPOST, mime.get());
 
-        curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
 
         // Sending a message
         logError(L"[Mail] Starting email transmission...", EMAIL_LOG_PATH);
-        res = curl_easy_perform(curl);
-
+        CURLcode res = curl_easy_perform(curl.get());
         if (res != CURLE_OK) {
             logError(L"[Mail] Failed to send email. CURL error: " + stringToWString(curl_easy_strerror(res)), EMAIL_LOG_PATH);
         }
-        else {
-            logError(L"[Mail] Email sent successfully.", EMAIL_LOG_PATH);
-        }
 
+        logError(L"[Mail] Email sent successfully.", EMAIL_LOG_PATH);
+        
         // Resource release
-        curl_slist_free_all(recipients);
-        curl_slist_free_all(headers);
-        curl_mime_free(mime);
-        curl_easy_cleanup(curl);
-
-        logError(L"[Mail] CURL resources cleaned up.\n", EMAIL_LOG_PATH);
-
-        // Delay before sending the next letter
         std::this_thread::sleep_for(std::chrono::seconds(1));
         return true;
     }

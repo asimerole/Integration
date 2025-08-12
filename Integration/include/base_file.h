@@ -18,6 +18,7 @@ struct BaseFile {
     std::string binaryData;			 	// Binary data
     size_t binaryDataSize;              // Size of file
     std::wstring fileNum;               // Num of file (xxxxx.xxx.321)
+	std::wstring filePrefix;            // Prefix of file (RECON, REXPR, etc.)
 
     bool inSortedFolder = false;        // Marker sort folder
 

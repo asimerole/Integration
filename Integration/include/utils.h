@@ -86,7 +86,7 @@ bool showConfirmationDialog(const std::wstring& message, const std::wstring& tit
 std::vector<std::uint8_t> decryptData(const std::string& configPath, const unsigned char* key, const unsigned char* iv);
 
 // Reads a configuration file and extracts the database connection parameters.
-bool readConfigFile(std::string& configPath, std::string& serverName, std::string& databaseName, std::string& username, std::string& password);
+bool readConfigFile(std::string& configPath, std::string& serverName, std::string& databaseName, std::string& username, std::string& password, std::string& port);
 
 // Gets the current date in the format "YYYY-MM-DD".
 std::wstring getCurrentDate();

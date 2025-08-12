@@ -156,8 +156,8 @@ bool Database::connectToDatabase() {
     try {
         // Find configuration file
         std::string configFilePath = findConfigFile();
-        std::string server, database, username, password;
-        readConfigFile(configFilePath, server, database, username, password);
+        std::string server, database, username, password, port;
+        readConfigFile(configFilePath, server, database, username, password, port);
 
         if (server.empty() || database.empty() || username.empty() || password.empty()) {
             logError(L"Check for missing params: server:" + stringToWString(server) +
@@ -166,6 +166,10 @@ bool Database::connectToDatabase() {
                 L"\npassword: " + stringToWString(password), LOG_PATH);
             return false;
         }
+
+		if (port.empty()) {
+			port = "1433"; // Default SQL Server port
+		}
 
         // Initializing the ODBC environment
         SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
@@ -189,7 +193,7 @@ bool Database::connectToDatabase() {
 
         std::string connectionString =
             "DRIVER={SQL Server};"
-            "SERVER=" + server +
+            "SERVER=" + server + "," + port +
             ";DATABASE=" + database +
             ";UID=" + username +
             ";PWD=" + password +
@@ -273,12 +277,6 @@ bool Database::executeSQL(SQLHDBC dbc, const std::wstringstream& sql) {
         }
     }
     return success;
-}
-
-bool Database::insertBinaryFileToDatabase(SQLHDBC dbc, const std::string& filePath, int structId)
-{
-
-    return false;
 }
 
 // Method of obtaining an integral result
