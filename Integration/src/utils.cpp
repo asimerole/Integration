@@ -225,7 +225,7 @@ bool showConfirmationDialog(const std::wstring& message, const std::wstring& tit
 // Decrypting data from config file
 std::vector<std::uint8_t> decryptData(const std::string& configPath, const unsigned char* key, const unsigned char* iv)
 {
-    std::ifstream configFile(configPath);
+    std::ifstream configFile(configPath, std::ios::binary);
     if (!configFile.is_open()) {
         throw std::runtime_error("Failed to open configuration file: " + configPath);
         return {};
@@ -251,7 +251,7 @@ std::vector<std::uint8_t> decryptData(const std::string& configPath, const unsig
     std::vector<unsigned char> buffer(1024);
     std::vector<unsigned char> decryptedBuffer(1024 + EVP_CIPHER_block_size(EVP_aes_256_cbc()));
     int outLen = 0;
-
+    
     while (configFile.read(reinterpret_cast<char*>(buffer.data()), buffer.size()) || configFile.gcount() > 0) {
         size_t bytesRead = configFile.gcount();
         decryptedBuffer.resize(bytesRead + EVP_CIPHER_block_size(EVP_aes_256_cbc()));
@@ -280,11 +280,13 @@ bool readConfigFile(std::string& configPath, std::string& serverName, std::strin
 {
     std::vector<unsigned char> decryptedData = decryptData(configPath, key, iv);
     if (decryptedData.empty()) {
+        logError(L"Decrypted data from config file is empty", LOG_PATH);
         return false; 
     }
 
     // Convert the decrypted data into a string
     std::string decryptedString(decryptedData.begin(), decryptedData.end());
+    logError(L"Decrypted config file" + stringToWString(decryptedString), LOG_PATH);
     // Let's analyze the configuration line by line
     std::istringstream in(decryptedString);
     std::string line;

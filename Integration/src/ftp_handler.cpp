@@ -166,11 +166,11 @@ void Ftp::collectServers(std::vector<ServerInfo>& servers, SQLHDBC dbc) {
 
         std::wstring query = L"SELECT u.unit, u.substation, s.object, fs.IP_addr, fs.login, fs.password, "
             L"fs.status, d.remote_path, d.local_path, d.isFourDigits, s.recon_id "
-            L"FROM [ReconDB].[dbo].[units] u "
-            L"JOIN [ReconDB].[dbo].[struct_units] su ON u.id = su.unit_id "
-            L"JOIN [ReconDB].[dbo].[struct] s ON su.struct_id = s.id "
-            L"JOIN [ReconDB].[dbo].[FTP_servers] fs ON fs.unit_id = u.id "
-            L"JOIN [ReconDB].[dbo].[FTP_Directories] d ON d.struct_id = s.id "
+            L"FROM [units] u "
+            L"JOIN [struct_units] su ON u.id = su.unit_id "
+            L"JOIN [struct] s ON su.struct_id = s.id "
+            L"JOIN [FTP_servers] fs ON fs.unit_id = u.id "
+            L"JOIN [FTP_Directories] d ON d.struct_id = s.id "
             L"WHERE fs.status = 1 AND d.isActiveDir = 1";
 
         //logFtpError(L"[FTP] Executing SQL query...");
@@ -486,7 +486,7 @@ bool Ftp::isServerActive(const ServerInfo& server, SQLHDBC dbc)
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
 
     // We construct a query assuming that the IP address is stored in server.ip
-    std::wstring query = L"SELECT [status] FROM [ReconDB].[dbo].[FTP_servers] WHERE [IP_addr] = '" + std::wstring(server.ip.begin(), server.ip.end()) + L"'";
+    std::wstring query = L"SELECT [status] FROM [FTP_servers] WHERE [IP_addr] = '" + std::wstring(server.ip.begin(), server.ip.end()) + L"'";
 
     ret = SQLExecDirect(stmt, (SQLWCHAR*)query.c_str(), SQL_NTS);
     if (SQL_SUCCEEDED(ret)) {

@@ -13,6 +13,8 @@
 
 namespace fs = boost::filesystem;
 
+std::wstring Database::configFileName = L"";
+
 Database::Database(){}
 
 // Method of searching for config file
@@ -29,7 +31,7 @@ std::string Database::findConfigFile() {
 // Getting the root folder from the database
 std::wstring Database::getPathFromDbByName(SQLHDBC dbc, std::wstring name) {
     std::wstringstream queryStream;
-    queryStream << L"SELECT [value] FROM [ReconDB].[dbo].[access_settings] WHERE [name] = '" + name  + L"'";
+    queryStream << L"SELECT [value] FROM [access_settings] WHERE [name] = '" + name  + L"'";
     std::wstring queryStr = queryStream.str();
 
     SQLHSTMT stmt = SQL_NULL_HSTMT;
@@ -70,7 +72,7 @@ SQLHDBC Database::getConnectionHandle() const{
 int Database::getCycleTimeFromDB(SQLHDBC dbc)
 {
     std::wstringstream queryStream;
-    queryStream << L"SELECT [value] FROM [ReconDB].[dbo].[access_settings] WHERE [name] = 'feeding_cycle'";
+    queryStream << L"SELECT [value] FROM [access_settings] WHERE [name] = 'feeding_cycle'";
     
     int time = executeSQLAndGetIntResult(dbc, queryStream);
 
@@ -89,7 +91,7 @@ std::wstring Database::getJsonConfigFromDatabase(std::string name, SQLHDBC dbc)
 
     const wchar_t* sqlQuery = LR"(
         SELECT [value] AS value
-        FROM [ReconDB].[dbo].[access_settings]
+        FROM [access_settings]
         WHERE [name] = ?
     )";
 
@@ -153,9 +155,32 @@ bool Database::isConnected()
 
 // Method of connection to the database
 bool Database::connectToDatabase() {
-    try {
-        // Find configuration file
-        std::string configFilePath = findConfigFile();
+    try { 
+        // Find configuration file 
+        std::string configFilePath;
+        if (configFileName.empty()) {
+            logError(L"Config filename is empty, trying to find.", LOG_PATH);
+            configFilePath = findConfigFile();
+        } else { 
+            logError(L"Config filename isn't empty", LOG_PATH);
+            wchar_t exePath[MAX_PATH]; 
+            GetModuleFileNameW(NULL, exePath, MAX_PATH);
+
+            wchar_t* lastSlash = wcsrchr(exePath, L'\\'); 
+            if (lastSlash) *(lastSlash + 1) = L'\0';
+
+            fs::path fullPath = exePath;
+            fullPath /= configFileName;
+
+            logError(L"Config filename isn't empty. Full path to config: " + fullPath.wstring(), LOG_PATH);
+
+            if (!fs::exists(fullPath)) { 
+                logError(L"Config file does not exist: " + fullPath.wstring(), LOG_PATH); return false;
+            } 
+
+            configFilePath = fullPath.string();
+        } 
+
         std::string server, database, username, password, port;
         readConfigFile(configFilePath, server, database, username, password, port);
 
@@ -167,37 +192,39 @@ bool Database::connectToDatabase() {
             return false;
         }
 
-		if (port.empty()) {
-			port = "1433"; // Default SQL Server port
-		}
+        if (port.empty()) {
+            port = "1433"; // Default SQL Server port
+        }
 
         // Initializing the ODBC environment
-        SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
-        if (!SQL_SUCCEEDED(ret)) {
-            return false;
+        SQLRETURN ret;
+
+        if (env == SQL_NULL_HENV) {
+            ret = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
+            if (!SQL_SUCCEEDED(ret)) {
+                std::wcerr << L"[ODBC] Failed to allocate environment handle\n";
+                return false;
+            }
+            SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, (SQLPOINTER)SQL_OV_ODBC3, 0);
         }
 
-        ret = SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, (void*)SQL_OV_ODBC3, 0);
-        if (!SQL_SUCCEEDED(ret)) {
-            SQLFreeHandle(SQL_HANDLE_ENV, env);
-            env = SQL_NULL_HENV;
-            return false;
+        if (dbc == SQL_NULL_HDBC) {
+            ret = SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc);
+            if (!SQL_SUCCEEDED(ret)) {
+                std::wcerr << L"[ODBC] Failed to allocate connection handle\n";
+                return false;
+            }
+        }
+        else {
+            SQLDisconnect(dbc);
         }
 
-        ret = SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc);
-        if (!SQL_SUCCEEDED(ret)) {
-            SQLFreeHandle(SQL_HANDLE_ENV, env);
-            env = SQL_NULL_HENV;
-            return false;
-        }
-
-        std::string connectionString =
-            "DRIVER={SQL Server};"
-            "SERVER=" + server + "," + port +
-            ";DATABASE=" + database +
-            ";UID=" + username +
-            ";PWD=" + password +
-            ";Encrypt=no;TrustServerCertificate=yes;";
+        std::string connectionString = "DRIVER={ODBC Driver 17 for SQL Server};"
+            "SERVER=" + server + "," + port + ";"
+            "DATABASE=" + database + ";"
+            "UID=" + username + ";"
+            "PWD=" + password + ";"
+            "MultiSubnetFailover=Yes";
 
         std::wstring connectionWString(connectionString.begin(), connectionString.end());
         SQLTCHAR* connStr = (SQLTCHAR*)connectionWString.c_str();
@@ -207,6 +234,20 @@ bool Database::connectToDatabase() {
 
         ret = SQLDriverConnect(dbc, NULL, connStr, SQL_NTS, outStr, sizeof(outStr) / sizeof(SQLWCHAR), &outStrLen, SQL_DRIVER_NOPROMPT);
         if (!SQL_SUCCEEDED(ret)) {
+            logError(L"Database connection failed", LOG_PATH);
+
+            SQLTCHAR sqlState[6], message[1024];
+            SQLINTEGER nativeError;
+            SQLSMALLINT textLength;
+            int recNumber = 1;
+            while (SQLGetDiagRec(SQL_HANDLE_DBC, dbc, recNumber, sqlState, &nativeError, message, sizeof(message) / sizeof(SQLTCHAR), &textLength) != SQL_NO_DATA) { 
+                std::wstring errMsg = L"[SQLSTATE " + std::wstring(sqlState) + L"] "
+                    + L"(Error " + std::to_wstring(nativeError) + L") "
+                    + std::wstring(message) + L"\n"
+                    + stringToWString(connectionString);
+                logError(errMsg, LOG_PATH); recNumber++; 
+            }
+
             SQLFreeHandle(SQL_HANDLE_DBC, dbc);
             SQLFreeHandle(SQL_HANDLE_ENV, env);
             dbc = SQL_NULL_HDBC;
@@ -214,6 +255,7 @@ bool Database::connectToDatabase() {
             return false;
         }
 
+        logError(L"Database connection successfully!", LOG_PATH);
         return true; // Successful connection
     }
     catch (const std::exception& e) {

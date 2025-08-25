@@ -27,7 +27,7 @@ std::vector<std::string> Analytics::GetAdminsFromDb(SQLHDBC dbc)
 	const wchar_t* sqlQuery = LR"(
         SELECT 
             [login] AS login
-        FROM [ReconDB].[dbo].[users] 
+        FROM [users] 
         WHERE [status] = 1 AND [type] = '¿‰Ï≥Ì'
     )";
 

@@ -199,10 +199,10 @@ void Integration::getRecordInfo(SQLHDBC dbc, std::shared_ptr<BaseFile> file, Rec
         d.data_file,
         d.express_file,
         d.other_type_file
-        FROM [ReconDB].[dbo].[units] u
-        LEFT JOIN [ReconDB].[dbo].[struct] s 
+        FROM [units] u
+        LEFT JOIN [struct] s 
             ON s.recon_id = ? AND s.object = ?
-        LEFT JOIN [ReconDB].[dbo].[data] d 
+        LEFT JOIN [data] d 
             ON d.struct_id = s.id AND d.file_num = ?)";
 
     if (file->filePrefix == L"RECON" || file->filePrefix == L"REXPR") {
@@ -214,7 +214,7 @@ void Integration::getRecordInfo(SQLHDBC dbc, std::shared_ptr<BaseFile> file, Rec
 
     if (recordsInfo.needDataProcess) {
         sqlQuery += LR"(
-            LEFT JOIN [ReconDB].[dbo].[data_process] dp ON dp.id = d.id
+            LEFT JOIN [data_process] dp ON dp.id = d.id
         )";
     }
 
@@ -321,7 +321,7 @@ int Integration::insertIntoUnitTable(SQLHDBC dbc, const std::shared_ptr<BaseFile
     }
 
     const wchar_t* sqlQuery = LR"(
-        INSERT INTO [ReconDB].[dbo].[units] ([unit], [substation]) 
+        INSERT INTO [units] ([unit], [substation]) 
         OUTPUT INSERTED.id
         VALUES(?,?);
     )";
@@ -363,7 +363,7 @@ int Integration::insertIntoStructTable(SQLHDBC dbc, const std::shared_ptr<BaseFi
     }
 
     const wchar_t* sqlQuery = LR"(
-        INSERT INTO [ReconDB].[dbo].[struct] ([recon_id], [object], [files_path]) 
+        INSERT INTO [struct] ([recon_id], [object], [files_path]) 
         OUTPUT INSERTED.id
         VALUES(?,?,?);
     )";
@@ -420,8 +420,8 @@ bool hasFilePairInDatabase(SQLHDBC dbc, std::shared_ptr<BaseFile> baseFile, Reco
 
     std::wstring sqlQuery = LR"(
         SELECT COUNT(*)
-        FROM [ReconDB].[dbo].[data] D
-        JOIN [ReconDB].[dbo].[struct] S ON D.struct_id = S.id
+        FROM [data] D
+        JOIN [struct] S ON D.struct_id = S.id
         WHERE S.recon_id = ? AND D.file_num = ? AND D.date = ? AND D.[)";
 
     sqlQuery += fileType + L"] IS NULL";
@@ -495,11 +495,11 @@ int updateDataTable(SQLHDBC dbc, const FileInfo& fileInfo, RecordsInfoFromDB rec
     std::wstring sqlQuery;
     if (!recordsInfo.hasExpressBinary) {
         sqlQuery = LR"(
-            UPDATE [ReconDB].[dbo].[data]
+            UPDATE [data]
             SET [time] = ?, [express_file] = ?
             WHERE id = (
                 SELECT TOP 1 id
-                FROM [ReconDB].[dbo].[data]
+                FROM [data]
                 WHERE struct_id = ? AND file_num = ? AND date = ?
                 ORDER BY id DESC
             )
@@ -507,11 +507,11 @@ int updateDataTable(SQLHDBC dbc, const FileInfo& fileInfo, RecordsInfoFromDB rec
     }
     else if (!recordsInfo.hasDataBinary) {
         sqlQuery = LR"(
-            UPDATE [ReconDB].[dbo].[data]
+            UPDATE [data]
             SET [data_file] = ?
             WHERE id = (
                 SELECT TOP 1 id
-                FROM [ReconDB].[dbo].[data]
+                FROM [data]
                 WHERE struct_id = ? AND file_num = ? AND date = ?
                 ORDER BY id DESC
             )
@@ -635,7 +635,7 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, Reco
     }
 
     std::wstring sqlQuery = LR"(
-        INSERT INTO [ReconDB].[dbo].[data] 
+        INSERT INTO [data] 
         ([struct_id], [date], [time], [file_num]
     )";
 
@@ -719,7 +719,7 @@ int Integration::insertIntoDataTable(SQLHDBC dbc, const FileInfo& fileInfo, Reco
 
     if (baseFile) {
         ret = SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, 255, 0,
-            (SQLWCHAR*)file->fileName.substr(0, 5).c_str(), 0, nullptr);
+            (SQLWCHAR*)file->filePrefix.c_str(), 0, nullptr);
         if (!SQL_SUCCEEDED(ret)) logSQLError("Failed to bind file_num", hstmt, SQL_HANDLE_STMT);
     }
 
@@ -756,7 +756,7 @@ int Integration::insertIntoProcessTable(SQLHDBC dbc, const std::shared_ptr<BaseF
 
     const wchar_t* sqlQuery = LR"(
         SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
-        INSERT INTO [ReconDB].[dbo].[data_process] ([id], [damaged_line], [trigger], [event_type]) 
+        INSERT INTO [data_process] ([id], [damaged_line], [trigger], [event_type]) 
         OUTPUT INSERTED.id
         VALUES(?, ?, ?, ?);
     )";
@@ -849,6 +849,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
 
 	int reconId = 0;
 	size_t filesCount = fileInfo.files.size();
+    std::wstring filePrefix;
 
     for (const auto& file : fileInfo.files) {
         if (auto ef = std::dynamic_pointer_cast<ExpressFile>(file)) {
@@ -862,6 +863,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
         else if (auto bf = std::dynamic_pointer_cast<BaseFile>(file)) {
             baseFile = bf;
 			reconId = baseFile->reconNumber;
+            filePrefix = baseFile->filePrefix;
         }
         else {
             logError(L"[Integration] Unknown file type in fileInfo.files.", INTEGRATION_LOG_PATH);
@@ -882,7 +884,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
 
     // last_daily
     std::wstring lastDailyDateTimeStr;
-    if (baseFile && baseFile->fileName.substr(0, 5) == L"DAILY") {
+    if (baseFile && baseFile->filePrefix == L"DAILY") {
         lastDailyDateTimeStr = ConvertToSqlDateTimeFormat(baseFile->date, baseFile->time);
     }
 
@@ -896,9 +898,9 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     std::wstring checkQuery = LR"(
     SELECT 
         s.id, 
-        (SELECT COUNT(*) FROM [ReconDB].[dbo].[logs] l WHERE l.recon_id = s.id) AS log_count
+        (SELECT COUNT(*) FROM [logs] l WHERE l.recon_id = s.id) AS log_count
     FROM 
-        [ReconDB].[dbo].[struct] s
+        [struct] s
     WHERE 
         s.recon_id = ?
 )";
@@ -935,25 +937,33 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     std::wstring query = L"";
 
     if (count > 0) {
-        query += LR"(UPDATE[ReconDB].[dbo].[logs] SET )";
-        if (lastPingDateTimeStr.size() > 0) {
-            query += LR"(last_ping = ?, )";
+        query += LR"(UPDATE [logs] SET )";
+
+        bool firstField = true;
+
+        if (!lastPingDateTimeStr.empty()) {
+            query += L"last_ping = ?";
+            firstField = false;
         }
-        
+
         if (filesCount > 1) {
-            query += LR"(last_recon = ? )";
-        } 
+            if (!firstField) query += L", ";
+            query += L"last_recon = ?";
+            firstField = false;
+        }
         else {
-            if (lastDailyDateTimeStr.size() > 0) {
-                query += LR"(last_daily = ? )";
+            if (!lastDailyDateTimeStr.empty()) {
+                if (!firstField) query += L", ";
+                query += L"last_daily = ?";
+                firstField = false;
             }
         }
 
-        query += LR"(WHERE recon_id = ? )";
+        query += L" WHERE recon_id = ?";
     }
     else {
         query = LR"(
-            INSERT INTO [ReconDB].[dbo].[logs]
+            INSERT INTO [logs]
             ( 
         )";
         std::wstring values = L"VALUES (";
@@ -1021,7 +1031,7 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     }
 
     // If filesCount == 1 → insert last_daily
-    if (filesCount == 1) {
+    if (filesCount == 1 && filePrefix == L"DAILY") {
         SQLBindParameter(hstmt, paramIndex++, SQL_PARAM_INPUT, SQL_C_WCHAR, SQL_WVARCHAR, lastDailyDateTimeStr.size(), 0,
             (SQLWCHAR*)lastDailyDateTimeStr.c_str(), 0, nullptr);
         debugLog << L"\n[" << paramIndex - 1 << L"] last_daily = " << lastDailyDateTimeStr;
@@ -1036,8 +1046,35 @@ void Integration::insertIntoLogsTable(SQLHDBC dbc, const FileInfo& fileInfo, int
     if (!SQL_SUCCEEDED(ret)) {
         logSQLError("Failed to execute insert/update logs", hstmt, SQL_HANDLE_STMT);
     }
-
+    logError(debugLog.str(), INTEGRATION_LOG_PATH);
     SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+}
+
+void sendMailIfActive(
+    bool mailingIsActive,
+    const std::wstring& substation,
+    const FileInfo& fileInfo,
+    SQLHDBC& dbc
+) {
+    auto users = loadUsersFromDatabase(dbc);
+    auto it = users.find(wstringToString(substation));
+
+    if (mailingIsActive && it != users.end()) {
+        std::string configJson = wstringToUtf8(Database::getJsonConfigFromDatabase("mail", dbc));
+
+        if (!configJson.empty()) {
+            try {
+                auto config = parseMailServerConfig(configJson);
+                sendEmails(config, users, fileInfo);
+            }
+            catch (const std::exception& e) {
+                logError(L"[Mail] Failed to parse config JSON or send emails: " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
+            }
+        }
+        else {
+            logError(L"[Mail] Config JSON is empty. Skipping email sending.", EMAIL_LOG_PATH);
+        }
+    }
 }
 
 
@@ -1120,12 +1157,12 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
         // Insert into dbo.[struct_units] (if it does not exist)
         if (recordsInfo.struct_id != -1) {
             std::wstringstream sqlCheckStructUnits;
-            sqlCheckStructUnits << L"SELECT COUNT(*) FROM [ReconDB].[dbo].[struct_units] WHERE [unit_id] = " << recordsInfo.unit_id
+            sqlCheckStructUnits << L"SELECT COUNT(*) FROM [struct_units] WHERE [unit_id] = " << recordsInfo.unit_id
                 << L" AND [struct_id] = " << recordsInfo.struct_id << L";";
             int count = Database::executeSQLAndGetIntResult(dbc, sqlCheckStructUnits);
             if (count == 0) {
                 std::wstringstream sqlStructUnits;
-                sqlStructUnits << L"INSERT INTO [ReconDB].[dbo].[struct_units] ([unit_id], [struct_id]) VALUES ("
+                sqlStructUnits << L"INSERT INTO [struct_units] ([unit_id], [struct_id]) VALUES ("
                     << recordsInfo.unit_id << L", "     // [unit_id]
                     << recordsInfo.struct_id << L");";  // [struct_id]
 
@@ -1144,29 +1181,7 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
                 return;
 
             // Loading users and sending emails
-            auto users = loadUsersFromDatabase(dbc);
-
-            auto it = users.find(wstringToString(file->substation));
-            if (mailingIsActive && it != users.end()) {
-                std::string configJson = wstringToUtf8(Database::getJsonConfigFromDatabase("mail", dbc));
-
-                // Check for empty string
-                if (!configJson.empty()) {
-                    try {
-                        // Parsing JSON
-                        auto config = parseMailServerConfig(configJson);
-                        sendEmails(config, users, fileInfo);
-
-                    }
-                    catch (const std::exception& e) {
-                        logError(L"[Mail] Failed to parse config JSON or send emails: " + stringToWString(e.what()), EXCEPTION_LOG_PATH);
-
-                    }
-                }
-                else {
-                    logError(L"[Mail] Config JSON is empty. Skipping email sending.", EMAIL_LOG_PATH);
-                }
-            }
+            sendMailIfActive(mailingIsActive, file->substation, fileInfo, dbc);
         }
         else {
             // Check if we need to update
@@ -1175,6 +1190,7 @@ void Integration::fileIntegrationDB(SQLHDBC dbc, const FileInfo& fileInfo, std::
                     !recordsInfo.hasExpressBinary && fileInfo.hasExpressFile)
                 {
                     updateDataTable(dbc, fileInfo, recordsInfo);
+                    sendMailIfActive(mailingIsActive, file->substation, fileInfo, dbc);
                 }
             }
         }
@@ -1449,8 +1465,8 @@ std::wstring Integration::getPathByRNumber(int recon_id,SQLHDBC dbc)
     SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
 
     const wchar_t* query = LR"(SELECT d.local_path
-        FROM[ReconDB].[dbo].[struct] s 
-        JOIN[ReconDB].[dbo].[FTP_Directories] d ON d.struct_id = s.id 
+        FROM[struct] s 
+        JOIN[FTP_Directories] d ON d.struct_id = s.id 
         WHERE s.recon_id = ?)";
 
     ret = SQLPrepareW(stmt, (SQLWCHAR*)query, SQL_NTS);

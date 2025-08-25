@@ -33,7 +33,7 @@ public:
 
 	// Methods for work with Database
 	// Connecting to Database
-	bool connectToDatabase();											
+	bool connectToDatabase();	
 
 	// Executing SQL query
 	static bool executeSQL(SQLHDBC dbc, const std::wstringstream& sql);	
@@ -59,12 +59,22 @@ public:
 	// Disconnecting from Database
 	void disconnectFromDatabase();
 
+	static void setConfigFileName(const std::wstring& name) {
+		configFileName = name;
+	}
+
+	static std::wstring getConfigFileName() {
+		return configFileName;
+	}
+
 private:
 	SQLHENV env = SQL_NULL_HENV;
 	SQLHDBC dbc = SQL_NULL_HDBC;
 
 	// Finding the configuration file
 	std::string findConfigFile();
+
+	static std::wstring configFileName;
 };
 
 

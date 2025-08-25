@@ -143,9 +143,9 @@ std::map<std::string, std::vector<std::string>> loadUsersFromDatabase(SQLHDBC db
         SELECT 
             us.[login] AS login,
             un.[substation] AS substation
-        FROM [ReconDB].[dbo].[users] us
-        JOIN [ReconDB].[dbo].[users_units] uu ON us.[id] = uu.[user_id]
-        JOIN [ReconDB].[dbo].[units] un ON uu.[unit_id] = un.[id]
+        FROM [users] us
+        JOIN [users_units] uu ON us.[id] = uu.[user_id]
+        JOIN [units] un ON uu.[unit_id] = un.[id]
         WHERE us.[status] = 1 AND us.[send_mail] = 1
     )";
 
@@ -253,9 +253,9 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
             return false; // If there are no users, exit
         }
 
-        if (!isWithinLastNDays(file->date, 3)) {
-            return false;
-        }
+        //if (!isWithinLastNDays(file->date, 3)) {
+        //    return false;
+        //}
 
         const std::vector<std::string>& recipientsList = it->second;
         if (recipientsList.empty()) {
@@ -363,12 +363,12 @@ bool sendEmails(const MailServerConfig& config, const std::map<std::string, std:
             };
 
         // Adding a data file
-        if (dataFile && dataFile->hasDataFile) {
+        if (dataFile) {
             if (!attachIfExists(dataFile->fullPath, dataFile->fileName, L"data file")) return false;
         }
 
         // Attach express file
-        if (expressFile && expressFile->hasExpressFile) {
+        if (expressFile) {
             if (!attachIfExists(expressFile->fullPath, expressFile->fileName, L"express file")) return false;
         }
 
